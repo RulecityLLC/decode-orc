@@ -101,7 +101,9 @@ add_library(orc-core STATIC
     stages/dropout_analysis_sink/dropout_analysis_sink_stage.cpp
     stages/snr_analysis_sink/snr_analysis_sink_stage.cpp
     stages/burst_level_analysis_sink/burst_level_analysis_sink_stage.cpp
-    
+    stages/vbi_sink/vbi_sink_stage.cpp
+    stages/vbi_sink/vbi_writer_util.cpp
+
     # Dropout decision utilities
     dropout_decision.cpp
     
