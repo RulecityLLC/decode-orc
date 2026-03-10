@@ -26,7 +26,6 @@ enable_testing()
 # ---------------------------------------------------------------------------
 find_package(spdlog REQUIRED)
 find_package(fmt REQUIRED)
-find_package(ZLIB REQUIRED)
 
 # Resolve the ezpwd include directory (header-only Reed-Solomon library).
 # Priority: CMake cache variable > EZPWD_INCLUDE_DIR env > EZPWD_DIR env.

@@ -116,7 +116,6 @@
             yaml-cpp
             libpng
             fftw
-            zlib
 
             # FFmpeg components
             ffmpeg
