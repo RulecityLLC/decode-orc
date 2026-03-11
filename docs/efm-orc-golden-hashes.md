@@ -245,3 +245,41 @@ ec0802421acd415b403ecdce59ab332356c8b328f234a4f8dd597e0a5d0db5e7  /home/sdi/tmp/
   `.bin.bsm` bad-sector-map file alongside the binary output.  The `.bsm` hash is
   included in the golden baseline and was cross-validated against the Qt
   `ld-efm-decoder` reference run (`DS2_comS1.bin.bsm`).
+
+---
+
+## Performance history
+
+Standalone `ld-decode-tools` baseline (reference; sum of `real` wall times across all stages,
+documented in full in `docs/efm-golden-sample-baseline.md`):
+
+| Test | Baseline wall time |
+|---|---|
+| `roger_rabbit` (audio) | ~1m26.7s |
+| `DS2_comS1` (data)     | ~1m44.97s |
+
+### Commit `8fad4bf` — initial orc-cli integration (2026-03-10)
+
+No EFM-specific optimisations; STL template code compiled at `-O0`.
+
+| Test | `real` | `user` | `sys` | vs baseline |
+|---|---|---|---|---|
+| `roger_rabbit` (audio) | 7m02.271s | 6m59.511s | 0m01.110s | ~4.9× slower |
+| `DS2_comS1` (data)     | 8m20.223s | 8m16.320s | 0m01.513s | ~4.8× slower |
+
+### Commit `0a72ff1` — EFM performance optimisations (2026-03-11)
+
+Three fixes applied (see `docs/performance-testing.md` for root-cause analysis):
+
+1. EFM decoder vendored sources recompiled at `-O2` even in Debug builds
+   (`set_source_files_properties … COMPILE_FLAGS "-w -O2"`).
+2. `DelayLine::push()` O(N) `erase(begin())` FIFO replaced with an O(1) ring buffer.
+3. `SPDLOG_ACTIVE_LEVEL` lowered from unconditional `TRACE` to `INFO` (Debug) /
+   `WARN` (Release) to eliminate runtime `should_log()` overhead in hot paths.
+
+Hashes confirmed identical to baseline — no regressions.
+
+| Test | `real` | `user` | `sys` | vs baseline | vs `8fad4bf` |
+|---|---|---|---|---|---|
+| `roger_rabbit` (audio) | 1m19.986s | 1m18.687s | 0m00.916s | ~0.92× (faster) | ~5.3× faster |
+| `DS2_comS1` (data)     | 1m40.674s | 1m38.704s | 0m01.383s | ~0.97× (faster) | ~5.0× faster |

@@ -11,7 +11,6 @@
 
 #include <cstdint>
 #include <vector>
-#include <queue>
 
 class DelayLine
 {
@@ -31,6 +30,7 @@ private:
     };
 
     std::vector<DelayContents_t> m_buffer;
+    int32_t m_head;  // ring-buffer head: index of the oldest (next-to-output) element
 
     bool m_ready;
     int32_t m_pushCount;

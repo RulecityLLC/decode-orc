@@ -67,6 +67,7 @@ void DelayLines::flush()
 
 // DelayLine class implementation
 DelayLine::DelayLine(int32_t delayLength) :
+    m_head(0),
     m_ready(false),
     m_pushCount(0)
 {
@@ -92,22 +93,18 @@ void DelayLine::push(uint8_t& datum, bool& datumError, bool& datumPadded)
     bool tempInputError = datumError;
     bool tempInputPadded = datumPadded;
 
-    DelayContents_t temp;
-    
-    // Return output through the reference parameters
+    // Ring-buffer: m_head points to the oldest slot (the output value).
+    // Read the output, overwrite the slot with the new input, then advance the head.
+    // This is O(1) and avoids the O(N) erase(begin()) shift.
+    datum      = m_buffer[m_head].datum;
+    datumError = m_buffer[m_head].error;
+    datumPadded = m_buffer[m_head].padded;
 
-    // Get the first value
-    temp = m_buffer.front();
-    datum = temp.datum;
-    datumError = temp.error;
-    datumPadded = temp.padded;
+    m_buffer[m_head].datum   = tempInput;
+    m_buffer[m_head].error   = tempInputError;
+    m_buffer[m_head].padded  = tempInputPadded;
 
-    // Remove first element and add new one at the end
-    m_buffer.erase(m_buffer.begin());
-    temp.datum = tempInput;
-    temp.error = tempInputError;
-    temp.padded = tempInputPadded;
-    m_buffer.push_back(temp);
+    m_head = (m_head + 1 >= m_delayLength) ? 0 : m_head + 1;
 
     // Check if the delay line is ready
     if (m_pushCount >= m_delayLength) {
@@ -131,6 +128,7 @@ void DelayLine::flush()
         temp.padded = false;
         std::fill(m_buffer.begin(), m_buffer.end(), temp);
         
+        m_head = 0;
         m_ready = false;
     } else {
         m_ready = true;

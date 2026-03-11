@@ -12,7 +12,10 @@ list(REMOVE_ITEM EFM_DECODER_SOURCES
 
 # Suppress warnings on vendored third-party sources — these are not our code and
 # should not be held to the same -Wall/-Wextra standard as the rest of orc-core.
-set_source_files_properties(${EFM_DECODER_SOURCES} PROPERTIES COMPILE_FLAGS "-w")
+# Also force -O2 on these files even in Debug builds: the EFM pipeline is the
+# dominant CPU cost and STL template code at -O0 is the primary slowdown.  GCC/Clang
+# honour the last -O flag, so -O2 here overrides the target-level -O0.
+set_source_files_properties(${EFM_DECODER_SOURCES} PROPERTIES COMPILE_FLAGS "-w -O2")
 
 add_library(orc-core STATIC
     # Phase 1: Foundations
@@ -215,9 +218,18 @@ target_compile_options(orc-core PRIVATE
     $<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<CONFIG:Release>>:-O3>
 )
 
-# Enable debug/trace logging at compile time
-target_compile_definitions(orc-core PRIVATE 
-    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE
+# Set compile-time spdlog filter level per build type.
+# TRACE in Debug adds a runtime should_log() check on every log call site —
+# expensive in tight loops.  INFO in Debug still allows info/warn/error logging
+# while eliminating the trace/debug overhead.  Release uses WARN to compile out
+# all info/debug/trace calls entirely.
+target_compile_definitions(orc-core PRIVATE
+    $<$<CONFIG:Debug>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO>
+    $<$<NOT:$<CONFIG:Debug>>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_WARN>
+    # MSVC does not define ssize_t (a POSIX type); define it as ptrdiff_t so
+    # the ezpwd-reed-solomon headers (used by reedsolomon.cpp / rspc.cpp) compile
+    # correctly on Windows.
+    $<$<CXX_COMPILER_ID:MSVC>:ssize_t=ptrdiff_t>
 )
 
 # Find and link SQLite3
