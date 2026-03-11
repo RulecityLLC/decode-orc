@@ -342,10 +342,10 @@ PreviewImage render_frame_preview(
         }
     }
     auto weave_end = std::chrono::high_resolution_clock::now();
-    auto weave_ms = std::chrono::duration_cast<std::chrono::milliseconds>(weave_end - weave_start).count();
+    [[maybe_unused]] auto weave_ms = std::chrono::duration_cast<std::chrono::milliseconds>(weave_end - weave_start).count();
     
     auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    [[maybe_unused]] auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     ORC_LOG_DEBUG("PreviewHelpers::render_frame_preview: frame {} rendered in {} ms ({}x{} px) - weave: {}ms ({} get_line calls)",
                  frame_index, duration_ms, result.width, result.height, weave_ms, get_line_calls);
     

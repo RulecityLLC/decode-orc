@@ -228,7 +228,7 @@ void SNRAnalysisSinkStage::compute_stats(const VideoFieldRepresentation& vfr, co
     
     FrameSNRStats current_bin;
     size_t fields_in_bin = 0;
-    size_t first_field_in_bin = 0;  // Track first field index in bin for frame number calculation
+    [[maybe_unused]] size_t first_field_in_bin = 0;  // Track first field index in bin for frame number calculation
     size_t last_field_in_bin = 0;   // Track last field index in bin
 
     for (size_t i = 0; i < total_fields; ++i) {

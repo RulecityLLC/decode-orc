@@ -404,7 +404,7 @@ void EfmProcessor::drainDataPipeline()
 
 void EfmProcessor::showGeneralPipelineStatistics() const
 {
-    int64_t totalMs = m_pipelineStats.channelToF3Time
+    [[maybe_unused]] int64_t totalMs = m_pipelineStats.channelToF3Time
                     + m_pipelineStats.f3ToF2Time
                     + m_pipelineStats.f2CorrectionTime;
     ORC_LOG_INFO("Decoder processing summary (general):");
@@ -417,7 +417,7 @@ void EfmProcessor::showGeneralPipelineStatistics() const
 
 void EfmProcessor::showD24PipelineStatistics() const
 {
-    int64_t totalMs = m_pipelineStats.f2ToF1Time
+    [[maybe_unused]] int64_t totalMs = m_pipelineStats.f2ToF1Time
                     + m_pipelineStats.f1ToData24Time;
     ORC_LOG_INFO("Decoder processing summary (general):");
     ORC_LOG_INFO("  F2 to F1 processing time: {} ms", m_pipelineStats.f2ToF1Time);
@@ -428,7 +428,7 @@ void EfmProcessor::showD24PipelineStatistics() const
 
 void EfmProcessor::showAudioPipelineStatistics() const
 {
-    int64_t totalMs = m_pipelineStats.data24ToAudioTime
+    [[maybe_unused]] int64_t totalMs = m_pipelineStats.data24ToAudioTime
                     + m_pipelineStats.audioCorrectionTime;
     ORC_LOG_INFO("Decoder processing summary (audio):");
     ORC_LOG_INFO("  Data24 to Audio processing time: {} ms", m_pipelineStats.data24ToAudioTime);
@@ -439,7 +439,7 @@ void EfmProcessor::showAudioPipelineStatistics() const
 
 void EfmProcessor::showDataPipelineStatistics() const
 {
-    int64_t totalMs = m_pipelineStats.data24ToRawSectorTime
+    [[maybe_unused]] int64_t totalMs = m_pipelineStats.data24ToRawSectorTime
                     + m_pipelineStats.rawSectorToSectorTime;
     ORC_LOG_INFO("Decoder processing summary (data):");
     ORC_LOG_INFO("  Data24 to Raw Sector processing time: {} ms", m_pipelineStats.data24ToRawSectorTime);
@@ -490,7 +490,7 @@ void EfmProcessor::showAllStatistics() const
 
     // Overall wall-clock time
     auto endTime = std::chrono::high_resolution_clock::now();
-    int64_t wallTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+    [[maybe_unused]] int64_t wallTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         endTime - m_startTime).count();
     ORC_LOG_INFO("Overall wall-clock time: {} ms ({:.2f} seconds)", wallTimeMs, wallTimeMs / 1000.0);
 }

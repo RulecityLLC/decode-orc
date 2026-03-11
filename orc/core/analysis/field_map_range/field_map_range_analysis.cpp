@@ -664,7 +664,7 @@ bool FieldMapRangeAnalysisTool::canApplyToGraph() const {
 
 bool FieldMapRangeAnalysisTool::applyToGraph(AnalysisResult& result,
                                              const Project& /*project*/,
-                                             NodeID node_id) {
+                                             [[maybe_unused]] NodeID node_id) {
     if (result.status != AnalysisResult::Success) {
         ORC_LOG_ERROR("Cannot apply failed analysis result");
         return false;

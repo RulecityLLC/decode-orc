@@ -45,7 +45,7 @@ void ObservationCache::clear()
     ORC_LOG_DEBUG("ObservationCache: All cached observations cleared");
 }
 
-void ObservationCache::clear_node(NodeID node_id)
+void ObservationCache::clear_node([[maybe_unused]] NodeID node_id)
 {
     // Note: LRUCache doesn't support selective removal by predicate
     // For now, we just clear the entire cache when any node needs clearing

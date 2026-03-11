@@ -84,7 +84,7 @@ void WhiteSNRObserver::process_field(
         // Validate white level is in acceptable range
         double white_mean = calc_mean(white_slice);
         if (white_mean >= white_ire_min && white_mean <= white_ire_max) {
-            double noise_std = calc_std(white_slice);
+            [[maybe_unused]] double noise_std = calc_std(white_slice);
             double snr_db = calculate_psnr(white_slice);
             
             // Store in observation context
