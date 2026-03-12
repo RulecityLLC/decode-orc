@@ -9,6 +9,7 @@
 
 #include "../../factories_interface_mock.h"
 #include "../../include/video_field_representation_mock.h"
+#include "../stage_factories_interface_mock.h"
 #include <gtest/gtest.h>
 #include "daphne_vbi_sink_stage.h"
 #include "daphne_vbi_sink_stage_deps_interface_mock.h"
@@ -20,13 +21,6 @@ using testing::StrictMock;
 // using different namespace from module-under-test so that we can use the same class names in the tests as in the module-under-test
 namespace orc_unit_test
 {
-    class MockStageFactories : public orc::IStageFactories
-    {
-    public:
-        MOCK_METHOD(std::shared_ptr<orc::IDaphneVBISinkStageDeps>, CreateInstanceDaphneVBISinkStageDeps,
-            (orc::TriggerProgressCallback, std::atomic<bool> *, std::atomic<bool> *), (override));
-    };
-
     // test fixture for DaphneVBISinkStage suite of tests
     class DaphneVBISinkStage : public ::testing::Test
     {
