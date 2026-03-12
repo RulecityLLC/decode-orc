@@ -61,14 +61,6 @@ namespace orc
 
             daphne_vbi_writer_util_->write_header();  // header is required at the beginning of .VBI file
 
-            // Get video parameters
-            auto video_params = representation->get_video_parameters();
-            if (!video_params) {
-                ORC_LOG_ERROR("No video parameters available");
-                return false;
-            }
-            video_params->decoder = "orc";
-
             // Build sorted list of field IDs
             std::vector<FieldID> field_ids;
             field_ids.reserve(field_count);
