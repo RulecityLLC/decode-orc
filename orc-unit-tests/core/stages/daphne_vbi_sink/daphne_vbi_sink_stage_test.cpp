@@ -29,11 +29,12 @@ namespace orc_unit_test
         {
             pMockDeps_ = std::make_shared<StrictMock<MockDaphneVBISinkStageDeps>>();
             pMockRepresentation_ = std::make_shared<StrictMock<MockVideoFieldRepresentation>>();
+            pMockFactories_ = std::make_shared<MockFactories>();
 
-            EXPECT_CALL(mockFactories_, get_instance_stage_factories())
+            EXPECT_CALL(*pMockFactories_, get_instance_stage_factories())
                 .WillRepeatedly(Return(&mockStageFactories_));
 
-            instance_ = std::make_unique<orc::DaphneVBISinkStage>(std::shared_ptr<orc::IFactories>(&mockFactories_, [](orc::IFactories *) {}));
+            instance_ = std::make_unique<orc::DaphneVBISinkStage>(pMockFactories_);
         }
 
         void TearDown() override
@@ -47,7 +48,7 @@ namespace orc_unit_test
             return {std::static_pointer_cast<orc::Artifact>(pMockRepresentation_)};
         }
 
-        MockFactories mockFactories_;
+        std::shared_ptr<MockFactories> pMockFactories_;
         StrictMock<MockStageFactories> mockStageFactories_;
         std::shared_ptr<StrictMock<MockDaphneVBISinkStageDeps>> pMockDeps_;
         std::shared_ptr<StrictMock<MockVideoFieldRepresentation>> pMockRepresentation_;
@@ -125,7 +126,7 @@ namespace orc_unit_test
 
         EXPECT_CALL(*pMockRepresentation_, field_range())
             .Times(1)
-            .WillOnce(Return(orc::FieldIDRange(orc::FieldID(0), orc::FieldID(2))));
+            .WillOnce(Return(orc::FieldIDRange(orc::FieldID(0), orc::FieldID(3))));
 
         const bool result = instance_->trigger(inputs, parameters, observationContext);
 

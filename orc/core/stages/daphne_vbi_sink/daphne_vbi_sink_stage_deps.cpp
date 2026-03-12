@@ -16,12 +16,13 @@
 #include "observer.h"
 #include "white_flag_observer.h"
 #include <algorithm>    // for sort
+#include <utility>
 
 namespace orc
 {
     void DaphneVBISinkStageDeps::init(TriggerProgressCallback progress_callback, std::atomic<bool> *pIsProcessing, std::atomic<bool> *pCancelRequested)
     {
-        progress_callback_ = progress_callback;
+        progress_callback_ = std::move(progress_callback);
         pIsProcessing_ = pIsProcessing;
         pCancelRequested_ = pCancelRequested;
     }

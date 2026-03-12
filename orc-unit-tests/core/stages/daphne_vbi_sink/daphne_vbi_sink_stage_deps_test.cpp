@@ -52,8 +52,8 @@ namespace orc_unit_test
 
         StrictMock<MockVideoFieldRepresentation> mockRepresentation_;
 
-        std::atomic<bool> cancelRequested_;
-        std::atomic<bool> isProcessing_;
+        std::atomic<bool> cancelRequested_{};
+        std::atomic<bool> isProcessing_{};
         std::unique_ptr<orc::DaphneVBISinkStageDeps> instance_;
     };
 
