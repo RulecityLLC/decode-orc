@@ -305,7 +305,7 @@ void DropoutAnalysisSinkStage::compute_stats(const VideoFieldRepresentation& vfr
 
     FrameDropoutStats current_bin{};
     size_t frames_in_bin = 0;
-    int32_t bin_start_frame = 0;
+    [[maybe_unused]] int32_t bin_start_frame = 0;
 
     for (const auto& [frame_number, accum] : frame_accum) {
         if (frames_in_bin == 0) {

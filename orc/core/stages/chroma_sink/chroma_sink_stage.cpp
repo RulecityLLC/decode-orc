@@ -1130,7 +1130,7 @@ bool ChromaSinkStage::trigger(
     double decode_seconds = decode_duration.count() / 1000.0;
     double fps = numFrames / decode_seconds;
     int32_t total_fields = numFrames * 2;
-    double fields_per_second = total_fields / decode_seconds;
+    [[maybe_unused]] double fields_per_second = total_fields / decode_seconds;
     
     ORC_LOG_INFO("ChromaSink: Successfully wrote {} frames to: {}", numFrames, output_path_);
     ORC_LOG_DEBUG("ChromaSink: Performance - {:.2f} seconds, {:.2f} fps, {:.2f} fields/sec", 
@@ -1692,7 +1692,7 @@ PreviewImage ChromaSinkStage::render_preview(const std::string& option_id, uint6
     }
     
     auto decode_end = std::chrono::high_resolution_clock::now();
-    auto decode_ms = std::chrono::duration_cast<std::chrono::milliseconds>(decode_end - decode_start).count();
+    [[maybe_unused]] auto decode_ms = std::chrono::duration_cast<std::chrono::milliseconds>(decode_end - decode_start).count();
     ORC_LOG_DEBUG("ChromaSink: Frame {} decoded using '{}' decoder in {} ms", index, active_decoder, decode_ms);
     
     // Extract vectorscope data from ComponentFrame before RGB conversion

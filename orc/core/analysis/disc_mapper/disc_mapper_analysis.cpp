@@ -326,7 +326,7 @@ bool DiscMapperAnalysisTool::applyToGraph(AnalysisResult& result,
     ORC_LOG_DEBUG("Node '{}': Applying field mapping results", node_id);
     if (node_it->parameters.count("ranges")) {
         auto& old_value = node_it->parameters.at("ranges");
-        if (auto* str_val = std::get_if<std::string>(&old_value)) {
+        if ([[maybe_unused]] auto* str_val = std::get_if<std::string>(&old_value)) {
             ORC_LOG_DEBUG("Node '{}':   Old ranges parameter: {}", node_id, *str_val);
         }
     } else {

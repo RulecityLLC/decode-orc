@@ -516,7 +516,7 @@ AnalysisResult SourceAlignmentAnalysisTool::analyze(const AnalysisContext& ctx,
         // Log the results
         ORC_LOG_DEBUG("  Best common VBI frame {} found in {} of {} sources:", 
                     first_common_frame, max_sources_found, input_sources.size());
-        for (size_t src_idx : participating_sources) {
+        for ([[maybe_unused]] size_t src_idx : participating_sources) {
             ORC_LOG_DEBUG("    Source {}: at field_id {} (offset = {})", 
                         src_idx + 1, alignment_offsets[src_idx].value(), alignment_offsets[src_idx].value());
         }
@@ -711,7 +711,7 @@ bool SourceAlignmentAnalysisTool::canApplyToGraph() const {
 
 bool SourceAlignmentAnalysisTool::applyToGraph(AnalysisResult& result,
                                                const Project& /*project*/,
-                                               NodeID node_id) {
+                                               [[maybe_unused]] NodeID node_id) {
     if (result.status != AnalysisResult::Success) {
         ORC_LOG_ERROR("Cannot apply failed analysis result");
         return false;

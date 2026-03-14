@@ -110,7 +110,7 @@ std::shared_ptr<DAG> project_to_dag(const Project& project) {
         }
         
         for (const auto& [key, value] : dag_node.parameters) {
-            std::visit([&proj_node, key_ref = std::cref(key)](const auto& v) {
+            std::visit([&proj_node, key_ref = std::cref(key)]([[maybe_unused]] const auto& v) {
                 ORC_LOG_DEBUG("Node '{}':   param '{}' = {}", proj_node.node_id, key_ref.get(), v);
             }, value);
         }

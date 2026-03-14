@@ -1572,7 +1572,7 @@ bool StackerStage::set_parameters(const std::map<std::string, ParameterValue>& p
     
     bool any_changed = false;
     int32_t old_mode = m_mode;
-    int32_t old_threshold = m_smart_threshold;
+    int32_t old_smart_threshold = m_smart_threshold;
     
     for (const auto& [key, value] : params) {
         if (key == "mode") {
@@ -1614,6 +1614,9 @@ bool StackerStage::set_parameters(const std::map<std::string, ParameterValue>& p
             if (auto* val = std::get_if<int32_t>(&value)) {
                 if (*val < 0 || *val > 128) {
                     return false;
+                }
+                if (m_smart_threshold != *val) {
+                    any_changed = true;
                 }
                 m_smart_threshold = *val;
             } else {
@@ -1666,7 +1669,7 @@ bool StackerStage::set_parameters(const std::map<std::string, ParameterValue>& p
     
     if (any_changed) {
         ORC_LOG_DEBUG("StackerStage: Parameters changed - mode: {} -> {}, threshold: {} -> {}",
-                     old_mode, m_mode, old_threshold, m_smart_threshold);
+                     old_mode, m_mode, old_smart_threshold, m_smart_threshold);
     }
     
     return true;
@@ -1717,7 +1720,7 @@ PreviewImage StackerStage::render_preview(const std::string& option_id, uint64_t
     auto start_time = std::chrono::high_resolution_clock::now();
     auto result = PreviewHelpers::render_standard_preview(cached_output_, option_id, index, hint);
     auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    [[maybe_unused]] auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     ORC_LOG_DEBUG("Stacker PREVIEW: option '{}' index {} rendered in {} ms (hint={})",
                  option_id, index, duration_ms, hint == PreviewNavigationHint::Sequential ? "Sequential" : "Random");
     return result;

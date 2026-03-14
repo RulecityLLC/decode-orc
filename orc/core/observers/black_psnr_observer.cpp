@@ -59,8 +59,8 @@ void BlackPSNRObserver::process_field(
         return;
     }
     
-    double noise_std = calc_std(black_slice);
-    double black_mean = calc_mean(black_slice);
+    [[maybe_unused]] double noise_std = calc_std(black_slice);
+    [[maybe_unused]] double black_mean = calc_mean(black_slice);
     double psnr_db = calculate_psnr(black_slice);
     
     // Store in observation context
