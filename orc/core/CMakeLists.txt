@@ -221,12 +221,12 @@ target_compile_options(orc-core PRIVATE
 )
 
 # Set compile-time spdlog filter level per build type.
-# Debug builds must keep TRACE enabled so `--log-level debug` / `trace` can
-# still surface orc-core diagnostics at runtime. Release continues to use WARN
-# to compile out lower-severity logging overhead entirely.
+# Release builds compile down to DEBUG level (info/warn/error remain available
+# and debug output can be enabled at runtime via --log-level).  Debug/unset
+# builds go all the way to TRACE so every severity is reachable at runtime.
 target_compile_definitions(orc-core PRIVATE
-    $<$<CONFIG:Debug>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE>
-    $<$<NOT:$<CONFIG:Debug>>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_WARN>
+    $<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG>
+    $<$<NOT:$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE>
     # MSVC does not define ssize_t (a POSIX type); define it as ptrdiff_t so
     # the ezpwd-reed-solomon headers (used by reedsolomon.cpp / rspc.cpp) compile
     # correctly on Windows.
