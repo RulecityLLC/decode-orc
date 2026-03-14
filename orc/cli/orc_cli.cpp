@@ -12,41 +12,17 @@
 #include "logging.h"
 #include "crash_handler.h"
 #include "project_presenter.h"
+#include "error_types.h"
 
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <array>
-#include <string_view>
 #include <vector>
 #include <filesystem>
 
 namespace fs = std::filesystem;
 
 using namespace orc;
-
-namespace {
-
-bool is_non_fatal_processing_error(const std::string& error_message) {
-    static constexpr std::array<std::string_view, 6> non_fatal_patterns = {
-        "Failed to load NTSC TBC file '",
-        "Failed to load PAL TBC file '",
-        "Failed to load NTSC YC files '",
-        "Failed to load PAL YC files '",
-        "Failed to load TBC file (validation failed - see logs above)",
-        "Failed to load YC files (validation failed - see logs above)"
-    };
-
-    for (const auto pattern : non_fatal_patterns) {
-        if (error_message.find(pattern) != std::string::npos) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-} // namespace
 
 /**
  * @brief Print command-line usage information
@@ -181,15 +157,14 @@ int main(int argc, char* argv[]) {
         options.project_path = project_path;
         
         exit_code = cli::process_command(options);
+    } catch (const UserDataError& e) {
+        ORC_LOG_WARN("Processing failed: {}", e.what());
+        std::cerr << "\nWARNING: " << e.what() << "\n";
+
+        cleanup_crash_handler();
+        return 1;
     } catch (const std::exception& e) {
         const std::string error_message = e.what();
-
-        if (is_non_fatal_processing_error(error_message)) {
-            ORC_LOG_WARN("Processing failed: {}", error_message);
-            std::cerr << "\nWARNING: " << error_message << "\n";
-            cleanup_crash_handler();
-            return 1;
-        }
 
         std::cerr << "\nFATAL ERROR: " << error_message << "\n";
         
