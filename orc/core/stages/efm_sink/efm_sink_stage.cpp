@@ -336,14 +336,32 @@ bool EFMSinkStage::trigger(
         processor.setOutputMetadata(output_metadata);
         processor.setReportOutput(report);
 
-        if (progress_callback_) {
-            progress_callback_(0, total_tvalues, "Decoding EFM...");
+        processor.beginStream(output_path, static_cast<int64_t>(efm_buffer.size()));
+
+        constexpr size_t CHUNK_SIZE = 1024;
+        size_t offset = 0;
+        while (offset < efm_buffer.size()) {
+            if (cancel_requested_.load()) {
+                last_status_ = "Cancelled by user";
+                ORC_LOG_WARN("EFMSink: {}", last_status_);
+                is_processing_.store(false);
+                return false;
+            }
+
+            const size_t count = std::min(CHUNK_SIZE, efm_buffer.size() - offset);
+            processor.pushChunk({efm_buffer.begin() + static_cast<std::ptrdiff_t>(offset),
+                                  efm_buffer.begin() + static_cast<std::ptrdiff_t>(offset + count)});
+            offset += count;
+
+            if (progress_callback_ && (offset % (CHUNK_SIZE * 64) == 0 || offset == efm_buffer.size())) {
+                progress_callback_(offset, efm_buffer.size(), "Decoding EFM...");
+            }
         }
 
-        const bool ok = processor.processFromBuffer(efm_buffer, output_path);
+        const bool ok = processor.finishStream();
 
         if (!ok) {
-            throw std::runtime_error("EFMSink: EfmProcessor::processFromBuffer() returned false");
+            throw std::runtime_error("EFMSink: EfmProcessor::finishStream() returned false");
         }
 
         if (progress_callback_) {
