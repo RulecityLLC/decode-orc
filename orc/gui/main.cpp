@@ -154,12 +154,16 @@ void applySystemTheme(QApplication& app, bool isDark)
         app.setPalette(lightPalette);
     }
 
-    app.setStyleSheet(
+    const QString disabled_menu_text_color = isDark ? "rgb(127, 127, 127)" : "palette(mid)";
+
+    app.setStyleSheet(QString(
         "QMenuBar { background-color: palette(window); color: palette(window-text); }"
         "QMenuBar::item:selected { background-color: palette(highlight); color: palette(highlighted-text); }"
+        "QMenuBar::item:disabled { color: %1; }"
         "QMenu { background-color: palette(window); color: palette(window-text); }"
         "QMenu::item:selected { background-color: palette(highlight); color: palette(highlighted-text); }"
-    );
+        "QMenu::item:disabled { color: %1; }"
+    ).arg(disabled_menu_text_color));
 }
 
 void applyResolvedTheme(QApplication& app, const ThemeManager::Resolution& resolution)
