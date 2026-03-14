@@ -94,7 +94,7 @@ bool DaphneVBISinkStage::set_parameters(const std::map<std::string, ParameterVal
 bool DaphneVBISinkStage::trigger(
     const std::vector<ArtifactPtr>& inputs,
     const std::map<std::string, ParameterValue>& parameters,
-    ObservationContext& observation_context)
+    IObservationContext *pObservationContext)
 {
     ORC_LOG_DEBUG("DaphneVBISink: Trigger started");
     trigger_status_ = "Starting export...";
@@ -133,11 +133,18 @@ bool DaphneVBISinkStage::trigger(
 
     // Write .VBI binary file
     ORC_LOG_INFO("DaphneVBISink: Writing to '{}'", output_path);
+    if (pObservationContext == nullptr) {
+        trigger_status_ = "Error: Observation context is null";
+        ORC_LOG_ERROR("DaphneVBISink: Observation context pointer is null");
+        is_processing_.store(false);
+        return false;
+    }
+
     // Clear previous observations to avoid mixing runs
-    observation_context.clear();
+    pObservationContext->clear();
 
     std::shared_ptr<IDaphneVBISinkStageDeps> deps = this->factories_->get_instance_stage_factories()->CreateInstanceDaphneVBISinkStageDeps(progress_callback_, &is_processing_, &cancel_requested_);
-    bool success = deps->write_vbi(representation.get(), output_path, &observation_context);
+    bool success = deps->write_vbi(representation.get(), output_path, pObservationContext);
 
     if (success) {
         auto range = representation->field_range();

@@ -113,7 +113,7 @@ bool LDSinkStage::set_parameters(const std::map<std::string, ParameterValue>& pa
 bool LDSinkStage::trigger(
     const std::vector<ArtifactPtr>& inputs,
     const std::map<std::string, ParameterValue>& parameters,
-    ObservationContext& observation_context)
+    IObservationContext *pObservationContext)
 {
     ORC_LOG_DEBUG("LDSink: Trigger started");
     trigger_status_ = "Starting export...";
@@ -152,9 +152,27 @@ bool LDSinkStage::trigger(
     
     // Write TBC and metadata
     ORC_LOG_INFO("LDSink: Writing to '{}'", output_path);
+    if (pObservationContext == nullptr) {
+        trigger_status_ = "Error: Observation context is null";
+        ORC_LOG_ERROR("LDSink: Observation context pointer is null");
+        is_processing_.store(false);
+        return false;
+    }
+
+    auto *pConcreteObservationContext = dynamic_cast<ObservationContext *>(pObservationContext);
+    if (pConcreteObservationContext == nullptr) {
+        trigger_status_ = "Error: Observation context type mismatch";
+        ORC_LOG_ERROR("LDSink: Expected ObservationContext concrete type");
+        is_processing_.store(false);
+        return false;
+    }
+
     // Clear previous observations to avoid mixing runs
-    observation_context.clear();
-    bool success = write_tbc_and_metadata(representation.get(), output_path, observation_context);
+    pConcreteObservationContext->clear();
+    bool success = write_tbc_and_metadata(
+        representation.get(),
+        output_path,
+        *pConcreteObservationContext);
     
     if (success) {
         auto range = representation->field_range();

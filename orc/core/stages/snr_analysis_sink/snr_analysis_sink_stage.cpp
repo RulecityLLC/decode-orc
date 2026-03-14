@@ -138,7 +138,7 @@ SNRAnalysisSinkStage::ParsedConfig SNRAnalysisSinkStage::parse_config(
 bool SNRAnalysisSinkStage::trigger(
     const std::vector<ArtifactPtr>& inputs,
     const std::map<std::string, ParameterValue>& parameters,
-    ObservationContext& observation_context) {
+    IObservationContext *pObservationContext) {
 
     ORC_LOG_DEBUG("SNRAnalysisSink: Trigger started");
     is_processing_.store(true);
@@ -157,10 +157,14 @@ bool SNRAnalysisSinkStage::trigger(
             throw std::runtime_error("Input is not a VideoFieldRepresentation");
         }
 
+        if (pObservationContext == nullptr) {
+            throw std::runtime_error("Observation context pointer is null");
+        }
+
         ParsedConfig cfg = parse_config(parameters);
         last_mode_ = cfg.mode;
 
-        compute_stats(*vfr, cfg, observation_context);
+        compute_stats(*vfr, cfg, *pObservationContext);
 
         // If cancelled, don't write CSV and mark results as invalid
         if (cancel_requested_.load()) {
@@ -191,7 +195,7 @@ bool SNRAnalysisSinkStage::trigger(
     }
 }
 
-void SNRAnalysisSinkStage::compute_stats(const VideoFieldRepresentation& vfr, const ParsedConfig& cfg, const ObservationContext& observation_context) {
+void SNRAnalysisSinkStage::compute_stats(const VideoFieldRepresentation& vfr, const ParsedConfig& cfg, const IObservationContext& observation_context) {
     (void)cfg;  // Reserved for future configuration options
     frame_stats_.clear();
     total_frames_ = 0;
@@ -219,8 +223,11 @@ void SNRAnalysisSinkStage::compute_stats(const VideoFieldRepresentation& vfr, co
     ORC_LOG_DEBUG("SNRAnalysisSink: {} total fields, binning by {} fields per data point", 
                   total_fields, fields_per_bin);
 
-    // Create mutable copy of observation context to populate observations
-    ObservationContext mutable_context = observation_context;
+    // Create mutable context to populate observations; preserve existing values when possible.
+    ObservationContext mutable_context;
+    if (const auto *pConcreteContext = dynamic_cast<const ObservationContext *>(&observation_context)) {
+        mutable_context = *pConcreteContext;
+    }
     
     // Run observers on each field to populate SNR observations
     WhiteSNRObserver white_snr_observer;

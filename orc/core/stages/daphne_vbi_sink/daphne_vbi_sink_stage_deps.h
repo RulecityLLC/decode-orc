@@ -33,6 +33,10 @@ namespace orc
         DaphneVBISinkStageDeps(IFactories *pFactories, std::shared_ptr<IDaphneVBIWriterUtil> daphne_vbi_writer_util) : pFactories_(pFactories),
             daphne_vbi_writer_util_(std::move(daphne_vbi_writer_util)) {}
 
+        /**
+         * Why is init separate from the constructor? Because dependency injection frameworks usually work better if only interfaces are passed into them,
+         *  not other data such as TriggerProgressCallback.  For now, we aren't using a dependency injection framework, but this keeps the option open.
+         */
         void init(TriggerProgressCallback progress_callback, std::atomic<bool> *pIsProcessing, std::atomic<bool> *pCancelRequested);
 
         bool write_vbi(

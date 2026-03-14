@@ -100,7 +100,7 @@ bool CCSinkStage::set_parameters(const std::map<std::string, ParameterValue>& pa
 bool CCSinkStage::trigger(
     const std::vector<ArtifactPtr>& inputs,
     const std::map<std::string, ParameterValue>& parameters,
-    ObservationContext& observation_context) {
+    IObservationContext *pObservationContext) {
     is_processing_.store(true);
     cancel_requested_.store(false);
     
@@ -138,6 +138,10 @@ bool CCSinkStage::trigger(
         }
         VideoFormat video_format = descriptor->format;
         
+        if (pObservationContext == nullptr) {
+            throw std::runtime_error("Observation context pointer is null");
+        }
+
         // Instantiate closed caption observer to extract CC data
         auto cc_observer = std::make_unique<ClosedCaptionObserver>();
         
@@ -151,7 +155,7 @@ bool CCSinkStage::trigger(
         for (size_t i = 0; i < field_count; ++i) {
             FieldID field_id(static_cast<int32_t>(i + 1));
             if (vfr->has_field(field_id)) {
-                cc_observer->process_field(*vfr, field_id, &observation_context);
+                cc_observer->process_field(*vfr, field_id, pObservationContext);
             }
             
             if (cancel_requested_.load()) {
@@ -168,10 +172,10 @@ bool CCSinkStage::trigger(
         bool success = false;
         if (format == CCExportFormat::SCC) {
             ORC_LOG_INFO("Exporting closed captions to SCC format: {}", output_path);
-            success = export_scc(vfr.get(), output_path, video_format, observation_context);
+            success = export_scc(vfr.get(), output_path, video_format, *pObservationContext);
         } else {
             ORC_LOG_INFO("Exporting closed captions to plain text format: {}", output_path);
-            success = export_plain_text(vfr.get(), output_path, video_format, observation_context);
+            success = export_plain_text(vfr.get(), output_path, video_format, *pObservationContext);
         }
         
         is_processing_.store(false);
@@ -260,7 +264,7 @@ bool CCSinkStage::is_printable_char(uint8_t byte) const {
 bool CCSinkStage::export_scc(const VideoFieldRepresentation* vfr,
                              const std::string& output_path,
                              VideoFormat format,
-                             const ObservationContext& observation_context) {
+                             const IObservationContext& observation_context) {
     try {
         std::ofstream file(output_path);
         if (!file.is_open()) {
@@ -381,7 +385,7 @@ bool CCSinkStage::export_scc(const VideoFieldRepresentation* vfr,
 bool CCSinkStage::export_plain_text(const VideoFieldRepresentation* vfr,
                                    const std::string& output_path,
                                    VideoFormat format,
-                                   const ObservationContext& observation_context) {
+                                   const IObservationContext& observation_context) {
     try {
         std::ofstream file(output_path);
         if (!file.is_open()) {

@@ -62,7 +62,7 @@ namespace orc_unit_test
     {
         orc::ObservationContext observationContext;
 
-        const bool result = instance_->trigger({}, {}, observationContext);
+        const bool result = instance_->trigger({}, {}, &observationContext);
 
         EXPECT_FALSE(result);
         EXPECT_EQ(instance_->get_trigger_status(), "Error: No output path specified");
@@ -75,7 +75,7 @@ namespace orc_unit_test
             {"output_path", std::string("")}
         };
 
-        const bool result = instance_->trigger({}, parameters, observationContext);
+        const bool result = instance_->trigger({}, parameters, &observationContext);
 
         EXPECT_FALSE(result);
         EXPECT_EQ(instance_->get_trigger_status(), "Error: Output path is empty");
@@ -88,7 +88,7 @@ namespace orc_unit_test
             {"output_path", std::string("out")}
         };
 
-        const bool result = instance_->trigger({}, parameters, observationContext);
+        const bool result = instance_->trigger({}, parameters, &observationContext);
 
         EXPECT_FALSE(result);
         EXPECT_EQ(instance_->get_trigger_status(), "Error: No input connected");
@@ -102,7 +102,7 @@ namespace orc_unit_test
         };
         const std::vector<orc::ArtifactPtr> inputs = {nullptr};
 
-        const bool result = instance_->trigger(inputs, parameters, observationContext);
+        const bool result = instance_->trigger(inputs, parameters, &observationContext);
 
         EXPECT_FALSE(result);
         EXPECT_EQ(instance_->get_trigger_status(), "Error: Input is not a video field representation");
@@ -128,7 +128,7 @@ namespace orc_unit_test
             .Times(1)
             .WillOnce(Return(orc::FieldIDRange(orc::FieldID(0), orc::FieldID(3))));
 
-        const bool result = instance_->trigger(inputs, parameters, observationContext);
+        const bool result = instance_->trigger(inputs, parameters, &observationContext);
 
         EXPECT_TRUE(result);
         EXPECT_EQ(instance_->get_trigger_status(), "Exported 3 fields to out_path");
@@ -154,7 +154,7 @@ namespace orc_unit_test
         EXPECT_CALL(*pMockRepresentation_, field_range())
             .Times(0);
 
-        const bool result = instance_->trigger(inputs, parameters, observationContext);
+        const bool result = instance_->trigger(inputs, parameters, &observationContext);
 
         EXPECT_FALSE(result);
         EXPECT_EQ(instance_->get_trigger_status(), "Error: Failed to write output files");

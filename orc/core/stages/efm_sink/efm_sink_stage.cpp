@@ -83,8 +83,8 @@ bool EFMSinkStage::set_parameters(const std::map<std::string, ParameterValue>& p
 bool EFMSinkStage::trigger(
     const std::vector<ArtifactPtr>& inputs,
     const std::map<std::string, ParameterValue>& parameters,
-    ObservationContext& observation_context) {
-    (void)observation_context;
+    IObservationContext *pObservationContext) {
+    (void)pObservationContext;
     is_processing_.store(true);
     cancel_requested_.store(false);
     

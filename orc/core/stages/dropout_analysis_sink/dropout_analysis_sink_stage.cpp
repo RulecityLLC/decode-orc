@@ -138,8 +138,8 @@ DropoutAnalysisSinkStage::ParsedConfig DropoutAnalysisSinkStage::parse_config(
 bool DropoutAnalysisSinkStage::trigger(
     const std::vector<ArtifactPtr>& inputs,
     const std::map<std::string, ParameterValue>& parameters,
-    ObservationContext& observation_context) {
-    (void)observation_context;
+    IObservationContext *pObservationContext) {
+    (void)pObservationContext;
 
     ORC_LOG_DEBUG("DropoutAnalysisSink: Trigger started");
     is_processing_.store(true);

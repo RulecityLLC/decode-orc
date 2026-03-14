@@ -159,8 +159,13 @@ bool FFmpegVideoSinkStage::set_parameters(const std::map<std::string, ParameterV
 bool FFmpegVideoSinkStage::trigger(
     const std::vector<ArtifactPtr>& inputs,
     const std::map<std::string, ParameterValue>& parameters,
-    ObservationContext& observation_context)
+    IObservationContext *pObservationContext)
 {
+    if (pObservationContext == nullptr) {
+        ORC_LOG_ERROR("FFmpegVideoSink: Observation context pointer is null");
+        return false;
+    }
+
     // Check if closed caption embedding is enabled in parameters
     bool embed_cc = false;
     auto cc_param = parameters.find("embed_closed_captions");
@@ -193,7 +198,7 @@ bool FFmpegVideoSinkStage::trigger(
                      field_num <= field_range.end.value(); ++field_num) {
                     FieldID field_id(field_num);
                     if (vfr->has_field(field_id)) {
-                        cc_observer->process_field(*vfr, field_id, &observation_context);
+                        cc_observer->process_field(*vfr, field_id, pObservationContext);
                     }
                 }
                 
@@ -204,7 +209,7 @@ bool FFmpegVideoSinkStage::trigger(
     }
     
     // Call parent trigger which will use the populated observation context
-    return ChromaSinkStage::trigger(inputs, parameters, observation_context);
+    return ChromaSinkStage::trigger(inputs, parameters, pObservationContext);
 }
 
 } // namespace orc

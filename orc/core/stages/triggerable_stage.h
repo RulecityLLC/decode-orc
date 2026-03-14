@@ -11,7 +11,7 @@
 
 #include "../include/artifact.h"
 #include "../include/stage_parameter.h"
-#include "../include/observation_context.h"
+#include "../include/observation_context_interface.h"
 #include <memory>
 #include <vector>
 #include <map>
@@ -52,7 +52,7 @@ public:
   virtual bool trigger(
       const std::vector<ArtifactPtr>& inputs,
       const std::map<std::string, ParameterValue>& parameters,
-      ObservationContext& observation_context
+      IObservationContext *pObservationContext
   ) = 0;
 
   /**

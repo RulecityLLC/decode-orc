@@ -945,7 +945,7 @@ bool trigger_node(Project& project, NodeID node_id, std::string& status_out, Tri
     
     // Trigger (DAG and executor stay alive, keeping stage instances valid)
     ObservationContext observation_context;
-    bool success = trigger_stage->trigger(inputs, it->parameters, observation_context);
+    bool success = trigger_stage->trigger(inputs, it->parameters, &observation_context);
     status_out = trigger_stage->get_trigger_status();
     
     // DAG and executor destroyed here AFTER trigger completes, ensuring stages outlive artifacts
@@ -1003,7 +1003,7 @@ std::future<std::pair<bool, std::string>> trigger_node_async(
             }
             
             ObservationContext observation_context;
-            bool success = trigger_stage->trigger(inputs, target_node->parameters, observation_context);
+            bool success = trigger_stage->trigger(inputs, target_node->parameters, &observation_context);
             std::string status = trigger_stage->get_trigger_status();
             
             // DAG will be destroyed here, keeping stages alive throughout trigger

@@ -121,7 +121,7 @@ BurstLevelAnalysisSinkStage::ParsedConfig BurstLevelAnalysisSinkStage::parse_con
 bool BurstLevelAnalysisSinkStage::trigger(
     const std::vector<ArtifactPtr>& inputs,
     const std::map<std::string, ParameterValue>& parameters,
-    ObservationContext& observation_context) {
+    IObservationContext *pObservationContext) {
 
     ORC_LOG_DEBUG("BurstLevelAnalysisSink: Trigger started");
     is_processing_.store(true);
@@ -140,8 +140,12 @@ bool BurstLevelAnalysisSinkStage::trigger(
             throw std::runtime_error("Input is not a VideoFieldRepresentation");
         }
 
+        if (pObservationContext == nullptr) {
+            throw std::runtime_error("Observation context pointer is null");
+        }
+
         ParsedConfig cfg = parse_config(parameters);
-        compute_stats(*vfr, cfg, observation_context);
+        compute_stats(*vfr, cfg, *pObservationContext);
 
         // If cancelled, don't write CSV and mark results as invalid
         if (cancel_requested_.load()) {
@@ -172,7 +176,7 @@ bool BurstLevelAnalysisSinkStage::trigger(
     }
 }
 
-void BurstLevelAnalysisSinkStage::compute_stats(const VideoFieldRepresentation& vfr, const ParsedConfig& cfg, const ObservationContext& observation_context) {
+void BurstLevelAnalysisSinkStage::compute_stats(const VideoFieldRepresentation& vfr, const ParsedConfig& cfg, const IObservationContext& observation_context) {
     (void)cfg;  // Reserved for future configuration options
     frame_stats_.clear();
     total_frames_ = 0;
@@ -200,8 +204,11 @@ void BurstLevelAnalysisSinkStage::compute_stats(const VideoFieldRepresentation& 
     ORC_LOG_DEBUG("BurstLevelAnalysisSink: {} total fields, binning by {} fields per data point", 
                   total_fields, fields_per_bin);
 
-    // Create mutable copy of observation context to populate observations
-    ObservationContext mutable_context = observation_context;
+    // Create mutable context to populate observations; preserve existing values when possible.
+    ObservationContext mutable_context;
+    if (const auto *pConcreteContext = dynamic_cast<const ObservationContext *>(&observation_context)) {
+        mutable_context = *pConcreteContext;
+    }
     
     // Run observer on each field to populate burst level observations
     BurstLevelObserver burst_observer;

@@ -11,6 +11,7 @@
 #include "chroma_sink_stage.h"
 #include "stage_registry.h"
 #include "logging.h"
+#include "observation_context.h"
 #include "preview_renderer.h"
 #include "preview_helpers.h"
 
@@ -464,7 +465,7 @@ bool ChromaSinkStage::set_parameters(const std::map<std::string, ParameterValue>
 bool ChromaSinkStage::trigger(
     const std::vector<ArtifactPtr>& inputs,
     const std::map<std::string, ParameterValue>& parameters,
-    ObservationContext& observation_context [[maybe_unused]]) {
+    IObservationContext *pObservationContext [[maybe_unused]]) {
     // ChromaSinkStage is a video output sink and does not require or populate observations.
     // The LD sink and dedicated analysis stages handle observation extraction.
     ORC_LOG_DEBUG("ChromaSink: Trigger called - starting decode");
@@ -819,7 +820,14 @@ bool ChromaSinkStage::trigger(
     backendConfig.encoder_bitrate = encoder_bitrate_;
     backendConfig.embed_audio = embed_audio_;
     backendConfig.embed_closed_captions = embed_closed_captions_;
-    backendConfig.observation_context = &observation_context;
+    const auto *pConcreteObservationContext = dynamic_cast<const ObservationContext *>(pObservationContext);
+    if (pConcreteObservationContext == nullptr) {
+        ORC_LOG_ERROR("ChromaSink: Expected ObservationContext concrete type");
+        trigger_status_ = "Error: Observation context type mismatch";
+        trigger_in_progress_.store(false);
+        return false;
+    }
+    backendConfig.observation_context = pConcreteObservationContext;
     
     // Set field range for audio and/or closed caption extraction
     // Both features need to know which fields were processed

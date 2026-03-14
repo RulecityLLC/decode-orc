@@ -447,7 +447,7 @@ uint64_t RenderPresenter::triggerStage(NodeID node_id, ProgressCallback callback
         
         // Execute trigger using the observation context populated during execute_to_node
         orc::ObservationContext& obs_context = executor->get_observation_context();
-        bool success = trigger_stage->trigger(inputs, target_node->parameters, obs_context);
+        bool success = trigger_stage->trigger(inputs, target_node->parameters, &obs_context);
         
         // Clear current trigger stage pointer
         impl_->current_trigger_stage_ = nullptr;
