@@ -14,13 +14,25 @@
 
 namespace orc
 {
-    std::unique_ptr<IFileWriter<uint8_t>> Factories::create_instance_buffered_file_writer_uint8(size_t buffer_size)
+    std::shared_ptr<IFactories> Factories::instance()
     {
-        return std::make_unique<BufferedFileWriter<uint8_t>>(buffer_size);
+        // Meyer's singleton: thread-safe in C++11 and later, lazy initialization, and no need for manual cleanup.
+        static std::shared_ptr<IFactories> instance{new Factories()};
+        return instance;
     }
 
-    std::unique_ptr<IFileWriter<uint16_t>> Factories::create_instance_buffered_file_writer_uint16(size_t buffer_size)
+    IStageFactories* Factories::get_instance_stage_factories()
     {
-        return std::make_unique<BufferedFileWriter<uint16_t>>(buffer_size);
+        return &factoriesStage_;
+    }
+
+    std::shared_ptr<IFileWriter<uint8_t>> Factories::create_instance_buffered_file_writer_uint8(size_t buffer_size)
+    {
+        return std::make_shared<BufferedFileWriter<uint8_t>>(buffer_size);
+    }
+
+    std::shared_ptr<IFileWriter<uint16_t>> Factories::create_instance_buffered_file_writer_uint16(size_t buffer_size)
+    {
+        return std::make_shared<BufferedFileWriter<uint16_t>>(buffer_size);
     }
 }
