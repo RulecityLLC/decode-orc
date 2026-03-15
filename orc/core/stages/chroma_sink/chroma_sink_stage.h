@@ -176,8 +176,12 @@ private:
     // Status tracking
     std::string trigger_status_;
     std::atomic<bool> trigger_in_progress_{false};
+
+protected:
     std::atomic<bool> cancel_requested_{false};
     TriggerProgressCallback progress_callback_;
+
+private:
     
     // Helper methods for integration
     SourceField convertToSourceField(

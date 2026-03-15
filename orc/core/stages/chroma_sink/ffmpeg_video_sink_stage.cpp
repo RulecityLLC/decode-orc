@@ -187,13 +187,24 @@ bool FFmpegVideoSinkStage::trigger(
                 
                 // Get field range from VFR
                 auto field_range = vfr->field_range();
+                const size_t total_cc_fields = static_cast<size_t>(
+                    field_range.end.value() - field_range.start.value() + 1);
                 
+                if (progress_callback_) {
+                    progress_callback_(0, total_cc_fields, "Collecting closed caption data...");
+                }
+
                 // Run observer on all fields to extract CC data
-                 for (FieldID::value_type field_num = field_range.start.value(); 
+                size_t cc_fields_processed = 0;
+                for (FieldID::value_type field_num = field_range.start.value(); 
                      field_num <= field_range.end.value(); ++field_num) {
                     FieldID field_id(field_num);
                     if (vfr->has_field(field_id)) {
                         cc_observer->process_field(*vfr, field_id, &observation_context);
+                    }
+                    ++cc_fields_processed;
+                    if (progress_callback_) {
+                        progress_callback_(cc_fields_processed, total_cc_fields, "Collecting closed caption data...");
                     }
                 }
                 

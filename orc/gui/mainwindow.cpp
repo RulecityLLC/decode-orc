@@ -58,6 +58,10 @@ namespace orc {
 #include <QMenuBar>
 #include <QToolBar>
 #include <QInputDialog>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QLineEdit>
+#include <QFormLayout>
 #include <QStatusBar>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -850,21 +854,41 @@ void MainWindow::newProject(orc::VideoSystem video_format, orc::SourceType sourc
         return;
     }
     
-    // Show dialog to choose project type if not specified
+    // Show dialog to choose project name and type if not specified
+    QString project_name = "Untitled";
     if (video_format == orc::VideoSystem::Unknown || source_format == orc::SourceType::Unknown) {
-        bool ok;
-        
-        // Create dialog with project type options
-        QStringList items;
-        items << "NTSC Composite" << "NTSC YC" << "PAL Composite" << "PAL YC";
-        
-        QString item = QInputDialog::getItem(this, tr("New Project"),
-                                            tr("Select project type:"), items, 0, false, &ok);
-        if (!ok || item.isEmpty()) {
+        QDialog dialog(this);
+        dialog.setWindowTitle(tr("New Project"));
+
+        QLineEdit* name_edit = new QLineEdit("Untitled", &dialog);
+        name_edit->setMinimumWidth(200);
+        name_edit->selectAll();
+
+        QComboBox* type_combo = new QComboBox(&dialog);
+        type_combo->addItems({"NTSC Composite", "NTSC YC", "PAL Composite", "PAL YC"});
+
+        QFormLayout* form = new QFormLayout;
+        form->addRow(tr("Project name:"), name_edit);
+        form->addRow(tr("Project type:"), type_combo);
+
+        QDialogButtonBox* buttons = new QDialogButtonBox(
+            QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+        connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+        QVBoxLayout* main_layout = new QVBoxLayout(&dialog);
+        main_layout->addLayout(form);
+        main_layout->addWidget(buttons);
+
+        if (dialog.exec() != QDialog::Accepted) {
             return;  // User cancelled
         }
-        
-        // Parse selection
+
+        const QString entered_name = name_edit->text().trimmed();
+        project_name = entered_name.isEmpty() ? "Untitled" : entered_name;
+
+        // Parse type selection
+        const QString item = type_combo->currentText();
         if (item == "NTSC Composite") {
             video_format = orc::VideoSystem::NTSC;
             source_format = orc::SourceType::Composite;
@@ -890,9 +914,6 @@ void MainWindow::newProject(orc::VideoSystem video_format, orc::SourceType sourc
     preview_dialog_->previewWidget()->clearImage();
     preview_dialog_->previewSlider()->setEnabled(false);
     preview_dialog_->previewSlider()->setValue(0);
-    
-    // Create project with default "Untitled" name
-    QString project_name = "Untitled";
     
     QString error;
     if (!project_.newEmptyProject(project_name, 
@@ -1086,6 +1107,15 @@ void MainWindow::quickProject(const QString& filename)
     // Determine metadata file
     QString db_path = base_path + ".tbc.db";
     if (!QFileInfo::exists(db_path)) {
+        // Check for legacy JSON metadata produced by older ld-decode/vhs-decode
+        QString json_path = base_path + ".tbc.json";
+        if (QFileInfo::exists(json_path)) {
+            QMessageBox::warning(this, "Legacy Metadata Format",
+                "TBC source has legacy JSON metadata and cannot be loaded. "
+                "Please update your decoder to a recent version with SQLite support and decode again "
+                "(recommended) or run ld-json-converter on the old JSON file (not recommended)");
+            return;
+        }
         QMessageBox::warning(this, "Missing Metadata File", 
             QString("Could not find metadata file: %1").arg(db_path));
         return;
@@ -1589,7 +1619,7 @@ void MainWindow::onAspectRatioModeChanged(int index)
 
 void MainWindow::updateWindowTitle()
 {
-    QString title = "Orc GUI";
+    QString title = "No Project Loaded";
     
     QString project_name = project_.projectName();
     if (!project_name.isEmpty()) {
