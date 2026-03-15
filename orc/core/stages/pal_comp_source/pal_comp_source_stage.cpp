@@ -16,6 +16,7 @@
 #include <stage_registry.h>
 #include <stdexcept>
 #include <fstream>
+#include <filesystem>
 
 namespace orc {
 
@@ -54,6 +55,19 @@ std::vector<ArtifactPtr> PALCompSourceStage::execute(
     } else {
         // Default: input_path + ".db"
         db_path = input_path + ".db";
+    }
+
+    // Check for legacy JSON metadata (produced by older ld-decode/vhs-decode)
+    if (!std::filesystem::exists(db_path) &&
+            db_path.size() > 3 && db_path.compare(db_path.size() - 3, 3, ".db") == 0) {
+        std::string json_path = db_path.substr(0, db_path.size() - 3) + ".json";
+        if (std::filesystem::exists(json_path)) {
+            throw UserDataError(
+                "TBC source has legacy JSON metadata and cannot be loaded. "
+                "Please update your decoder to a recent version with SQLite support and decode again "
+                "(recommended) or run ld-json-converter on the old JSON file (not recommended)"
+            );
+        }
     }
     
     // Get optional PCM audio path

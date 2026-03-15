@@ -1086,6 +1086,15 @@ void MainWindow::quickProject(const QString& filename)
     // Determine metadata file
     QString db_path = base_path + ".tbc.db";
     if (!QFileInfo::exists(db_path)) {
+        // Check for legacy JSON metadata produced by older ld-decode/vhs-decode
+        QString json_path = base_path + ".tbc.json";
+        if (QFileInfo::exists(json_path)) {
+            QMessageBox::warning(this, "Legacy Metadata Format",
+                "TBC source has legacy JSON metadata and cannot be loaded. "
+                "Please update your decoder to a recent version with SQLite support and decode again "
+                "(recommended) or run ld-json-converter on the old JSON file (not recommended)");
+            return;
+        }
         QMessageBox::warning(this, "Missing Metadata File", 
             QString("Could not find metadata file: %1").arg(db_path));
         return;

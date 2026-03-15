@@ -547,8 +547,53 @@ void StageParameterDialog::on_reset_defaults()
 
 bool StageParameterDialog::validate_values()
 {
-    // Basic validation - Qt widgets already enforce min/max
-    // Could add additional validation here if needed
+    // Helper: resolve a potentially-relative path to absolute using the project directory
+    auto resolve_path = [this](const QString& path) -> QString {
+        if (path.isEmpty() || project_path_.isEmpty()) return path;
+        if (QFileInfo(path).isAbsolute()) return path;
+        return QDir(QFileInfo(project_path_).absolutePath()).filePath(path);
+    };
+
+    // Helper: verify the SQLite metadata (.tbc.db) file exists; warn specifically
+    // if only a legacy JSON file is found, or generically if nothing is found.
+    auto check_db_file = [this](const QString& db_path) -> bool {
+        if (db_path.isEmpty()) return true;
+        if (QFileInfo::exists(db_path)) return true;
+
+        if (db_path.endsWith(".db", Qt::CaseInsensitive)) {
+            QString json_path = db_path.left(db_path.length() - 3) + ".json";
+            if (QFileInfo::exists(json_path)) {
+                QMessageBox::warning(this, "Legacy Metadata Format",
+                    "TBC source has legacy JSON metadata and cannot be loaded. "
+                    "Please update your decoder to a recent version with SQLite support and decode again "
+                    "(recommended) or run ld-json-converter on the old JSON file (not recommended)");
+                return false;
+            }
+        }
+        QMessageBox::warning(this, "Missing Metadata File",
+            QString("Metadata file not found:\n%1\n\nRe-run the decoder to generate a .tbc.db metadata file.")
+                .arg(db_path));
+        return false;
+    };
+
+    // Composite source stages: db_path is derived from input_path at runtime as input_path + ".db"
+    auto input_it = parameter_widgets_.find("input_path");
+    if (input_it != parameter_widgets_.end()) {
+        auto* edit = input_it->second.widget->findChild<QLineEdit*>("file_path_edit");
+        if (edit && !edit->text().isEmpty()) {
+            if (!check_db_file(resolve_path(edit->text()) + ".db")) return false;
+        }
+    }
+
+    // YC source stages: db_path is an explicit parameter
+    auto db_it = parameter_widgets_.find("db_path");
+    if (db_it != parameter_widgets_.end()) {
+        auto* edit = db_it->second.widget->findChild<QLineEdit*>("file_path_edit");
+        if (edit && !edit->text().isEmpty()) {
+            if (!check_db_file(resolve_path(edit->text()))) return false;
+        }
+    }
+
     return true;
 }
 
