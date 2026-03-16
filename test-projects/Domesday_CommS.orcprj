@@ -1,0 +1,171 @@
+# ORC Project File
+# Version: 1.0
+
+project:
+  name: Domesday_CommS
+  version: 1.0
+  video_format: PAL
+  source_format: Composite
+dag:
+  nodes:
+    - id: 1
+      stage: PAL_Comp_Source
+      node_type: SOURCE
+      display_name: PAL Composite Source
+      user_label: DS2
+      x: 50
+      y: 50
+      parameters:
+        efm_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS2_comS1.efm
+        input_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS2_comS1.tbc
+        pcm_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS2_comS1.pcm
+    - id: 2
+      stage: PAL_Comp_Source
+      node_type: SOURCE
+      display_name: PAL Composite Source
+      user_label: DS4
+      x: 50
+      y: 175
+      parameters:
+        efm_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS4_comS1.efm
+        input_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS4_comS1.tbc
+        pcm_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS4_comS1.pcm
+    - id: 3
+      stage: PAL_Comp_Source
+      node_type: SOURCE
+      display_name: PAL Composite Source
+      user_label: DS6
+      x: 50
+      y: 300
+      parameters:
+        efm_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS6_comS1.efm
+        input_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS6_comS1.tbc
+        pcm_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS6_comS1.pcm
+    - id: 4
+      stage: PAL_Comp_Source
+      node_type: SOURCE
+      display_name: PAL Composite Source
+      user_label: DS7
+      x: 50
+      y: 425
+      parameters:
+        efm_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS7_comS1.efm
+        input_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS7_comS1.tbc
+        pcm_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS7_comS1.pcm
+    - id: 5
+      stage: PAL_Comp_Source
+      node_type: SOURCE
+      display_name: PAL Composite Source
+      user_label: DS8
+      x: 50
+      y: 550
+      parameters:
+        efm_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS8_comS1.efm
+        input_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS8_comS1.tbc
+        pcm_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS8_comS1.pcm
+    - id: 6
+      stage: PAL_Comp_Source
+      node_type: SOURCE
+      display_name: PAL Composite Source
+      user_label: DS10
+      x: 50
+      y: 675
+      parameters:
+        efm_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS10_comS1.efm
+        input_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS10_comS1.tbc
+        pcm_path:
+          type: string
+          value: ../../../raid/decodes/AIV_Domesday_20250115/ComS/DS10_comS1.pcm
+    - id: 7
+      stage: field_map
+      node_type: TRANSFORM
+      display_name: Field Map
+      user_label: Field Map
+      x: 275
+      y: 50
+      parameters:
+        ranges:
+          type: string
+          value: 2-32501,PAD_2,32504-108001
+    - id: 8
+      stage: field_map
+      node_type: TRANSFORM
+      display_name: Field Map
+      user_label: Field Map
+      x: 275
+      y: 175
+    - id: 9
+      stage: field_map
+      node_type: TRANSFORM
+      display_name: Field Map
+      user_label: Field Map
+      x: 275
+      y: 300
+    - id: 10
+      stage: field_map
+      node_type: TRANSFORM
+      display_name: Field Map
+      user_label: Field Map
+      x: 275
+      y: 425
+    - id: 11
+      stage: field_map
+      node_type: TRANSFORM
+      display_name: Field Map
+      user_label: Field Map
+      x: 275
+      y: 550
+    - id: 12
+      stage: field_map
+      node_type: TRANSFORM
+      display_name: Field Map
+      user_label: Field Map
+      x: 275
+      y: 675
+  edges:
+    - from: 1
+      to: 7
+    - from: 2
+      to: 8
+    - from: 3
+      to: 9
+    - from: 4
+      to: 10
+    - from: 5
+      to: 11
+    - from: 6
+      to: 12
