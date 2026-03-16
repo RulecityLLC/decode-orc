@@ -360,7 +360,7 @@ void MainWindow::setupUI()
                 render_coordinator_->setShowDropouts(show);
                 updatePreview();
             });
-        connect(preview_dialog_, &PreviewDialog::showVBIDialogRequested,
+    connect(preview_dialog_, &PreviewDialog::showVBIDialogRequested,
             this, &MainWindow::onShowVBIDialog);
     connect(preview_dialog_, &PreviewDialog::showHintsDialogRequested,
             this, &MainWindow::onShowHintsDialog);
@@ -413,30 +413,9 @@ void MainWindow::setupUI()
     // Set alignment so (0,0) appears at top-left of view
     dag_view_->setAlignment(Qt::AlignLeft | Qt::AlignTop);
     
-    // Connect scene/model signals for DAG modifications  
-    connect(dag_model_, &QtNodes::AbstractGraphModel::connectionCreated,
-            this, &MainWindow::onDAGModified);
-    connect(dag_model_, &QtNodes::AbstractGraphModel::connectionDeleted,
-            this, &MainWindow::onDAGModified);
-    connect(dag_model_, &QtNodes::AbstractGraphModel::nodeCreated,
-            this, &MainWindow::onDAGModified);
-    connect(dag_model_, &QtNodes::AbstractGraphModel::nodeDeleted,
-            this, &MainWindow::onDAGModified);
-    
-    // Connect node selection signal
-    connect(dag_scene_, &OrcGraphicsScene::nodeSelected,
-            this, &MainWindow::onQtNodeSelected);
-    
-    // Connect node context menu action signals
-    connect(dag_scene_, &OrcGraphicsScene::editParametersRequested,
-            this, &MainWindow::onEditParameters);
-    connect(dag_scene_, &OrcGraphicsScene::triggerStageRequested,
-            this, &MainWindow::onTriggerStage);
-    connect(dag_scene_, &OrcGraphicsScene::inspectStageRequested,
-            this, &MainWindow::onInspectStage);
-    connect(dag_scene_, &OrcGraphicsScene::runAnalysisRequested,
-            this, &MainWindow::runAnalysisForNode);
-    
+    // Connect scene/model signals for DAG modifications
+    connectDAGSignals();
+
     // DAG editor takes up full main window
     setCentralWidget(dag_view_);
     
@@ -529,6 +508,43 @@ void MainWindow::setupToolbar()
     // Toolbar removed - was creating blank bar between menu and DAG editor
 }
 
+void MainWindow::connectDAGSignals()
+{
+    connect(dag_model_, &QtNodes::AbstractGraphModel::connectionCreated,
+            this, &MainWindow::onDAGModified);
+    connect(dag_model_, &QtNodes::AbstractGraphModel::connectionDeleted,
+            this, &MainWindow::onDAGModified);
+    connect(dag_model_, &QtNodes::AbstractGraphModel::nodeCreated,
+            this, &MainWindow::onDAGModified);
+    connect(dag_model_, &QtNodes::AbstractGraphModel::nodeDeleted,
+            this, &MainWindow::onDAGModified);
+    connect(dag_scene_, &OrcGraphicsScene::nodeSelected,
+            this, &MainWindow::onQtNodeSelected);
+    connect(dag_scene_, &OrcGraphicsScene::editParametersRequested,
+            this, &MainWindow::onEditParameters);
+    connect(dag_scene_, &OrcGraphicsScene::triggerStageRequested,
+            this, &MainWindow::onTriggerStage);
+    connect(dag_scene_, &OrcGraphicsScene::inspectStageRequested,
+            this, &MainWindow::onInspectStage);
+    connect(dag_scene_, &OrcGraphicsScene::runAnalysisRequested,
+            this, &MainWindow::runAnalysisForNode);
+    connect(dag_scene_, &QtNodes::BasicGraphicsScene::nodeDoubleClicked,
+            this, [this](QtNodes::NodeId) {
+                if (!auto_show_preview_action_->isChecked() && !preview_dialog_->isVisible()) {
+                    preview_dialog_->show();
+                }
+            });
+}
+
+void MainWindow::recreateDAGModelScene()
+{
+    delete dag_scene_;
+    delete dag_model_;
+    dag_model_ = new OrcGraphModel(*project_.presenter(), dag_view_);
+    dag_scene_ = new OrcGraphicsScene(*dag_model_, dag_view_);
+    dag_view_->setScene(dag_scene_);
+    connectDAGSignals();
+}
 
 
 void MainWindow::onNewProject()
@@ -930,36 +946,12 @@ void MainWindow::newProject(orc::VideoSystem video_format, orc::SourceType sourc
     
     // Recreate DAG model/scene since the presenter has changed
     if (dag_model_) {
-        delete dag_scene_;
-        delete dag_model_;
-        dag_model_ = new OrcGraphModel(*project_.presenter(), dag_view_);
-        dag_scene_ = new OrcGraphicsScene(*dag_model_, dag_view_);
-        dag_view_->setScene(dag_scene_);
-        
-        // Reconnect signals
-        connect(dag_model_, &QtNodes::AbstractGraphModel::connectionCreated,
-                this, &MainWindow::onDAGModified);
-        connect(dag_model_, &QtNodes::AbstractGraphModel::connectionDeleted,
-                this, &MainWindow::onDAGModified);
-        connect(dag_model_, &QtNodes::AbstractGraphModel::nodeCreated,
-                this, &MainWindow::onDAGModified);
-        connect(dag_model_, &QtNodes::AbstractGraphModel::nodeDeleted,
-                this, &MainWindow::onDAGModified);
-        connect(dag_scene_, &OrcGraphicsScene::nodeSelected,
-                this, &MainWindow::onQtNodeSelected);
-        connect(dag_scene_, &OrcGraphicsScene::editParametersRequested,
-                this, &MainWindow::onEditParameters);
-        connect(dag_scene_, &OrcGraphicsScene::triggerStageRequested,
-                this, &MainWindow::onTriggerStage);
-        connect(dag_scene_, &OrcGraphicsScene::inspectStageRequested,
-                this, &MainWindow::onInspectStage);
-        connect(dag_scene_, &OrcGraphicsScene::runAnalysisRequested,
-                this, &MainWindow::runAnalysisForNode);
+        recreateDAGModelScene();
     }
-    
+
     // Don't set a project path - leave it empty so user must use "Save As"
     // Project is marked as modified by create_empty_project()
-    
+
     ORC_LOG_INFO("Project created successfully: {}", project_name.toStdString());
     updateUIState();
     
@@ -997,33 +989,9 @@ void MainWindow::openProject(const QString& filename)
     
     // Recreate DAG model/scene since the presenter has changed
     if (dag_model_) {
-        delete dag_scene_;
-        delete dag_model_;
-        dag_model_ = new OrcGraphModel(*project_.presenter(), dag_view_);
-        dag_scene_ = new OrcGraphicsScene(*dag_model_, dag_view_);
-        dag_view_->setScene(dag_scene_);
-        
-        // Reconnect signals
-        connect(dag_model_, &QtNodes::AbstractGraphModel::connectionCreated,
-                this, &MainWindow::onDAGModified);
-        connect(dag_model_, &QtNodes::AbstractGraphModel::connectionDeleted,
-                this, &MainWindow::onDAGModified);
-        connect(dag_model_, &QtNodes::AbstractGraphModel::nodeCreated,
-                this, &MainWindow::onDAGModified);
-        connect(dag_model_, &QtNodes::AbstractGraphModel::nodeDeleted,
-                this, &MainWindow::onDAGModified);
-        connect(dag_scene_, &OrcGraphicsScene::nodeSelected,
-                this, &MainWindow::onQtNodeSelected);
-        connect(dag_scene_, &OrcGraphicsScene::editParametersRequested,
-                this, &MainWindow::onEditParameters);
-        connect(dag_scene_, &OrcGraphicsScene::triggerStageRequested,
-                this, &MainWindow::onTriggerStage);
-        connect(dag_scene_, &OrcGraphicsScene::inspectStageRequested,
-                this, &MainWindow::onInspectStage);
-        connect(dag_scene_, &OrcGraphicsScene::runAnalysisRequested,
-                this, &MainWindow::runAnalysisForNode);
+        recreateDAGModelScene();
     }
-    
+
     ORC_LOG_DEBUG("Project loaded: {}", project_.projectName().toStdString());
     
     // Project loaded - user can select a stage in the DAG editor for viewing
@@ -1272,36 +1240,12 @@ void MainWindow::quickProject(const QString& filename)
     
     // Recreate DAG model/scene since the presenter has changed
     if (dag_model_) {
-        delete dag_scene_;
-        delete dag_model_;
-        dag_model_ = new OrcGraphModel(*project_.presenter(), dag_view_);
-        dag_scene_ = new OrcGraphicsScene(*dag_model_, dag_view_);
-        dag_view_->setScene(dag_scene_);
-        
-        // Reconnect signals
-        connect(dag_model_, &QtNodes::AbstractGraphModel::connectionCreated,
-                this, &MainWindow::onDAGModified);
-        connect(dag_model_, &QtNodes::AbstractGraphModel::connectionDeleted,
-                this, &MainWindow::onDAGModified);
-        connect(dag_model_, &QtNodes::AbstractGraphModel::nodeCreated,
-                this, &MainWindow::onDAGModified);
-        connect(dag_model_, &QtNodes::AbstractGraphModel::nodeDeleted,
-                this, &MainWindow::onDAGModified);
-        connect(dag_scene_, &OrcGraphicsScene::nodeSelected,
-                this, &MainWindow::onQtNodeSelected);
-        connect(dag_scene_, &OrcGraphicsScene::editParametersRequested,
-                this, &MainWindow::onEditParameters);
-        connect(dag_scene_, &OrcGraphicsScene::triggerStageRequested,
-                this, &MainWindow::onTriggerStage);
-        connect(dag_scene_, &OrcGraphicsScene::inspectStageRequested,
-                this, &MainWindow::onInspectStage);
-        connect(dag_scene_, &OrcGraphicsScene::runAnalysisRequested,
-                this, &MainWindow::runAnalysisForNode);
+        recreateDAGModelScene();
     }
-    
+
     // Don't set a project path - leave it empty so user must use "Save As"
     // Project is marked as modified by create_empty_project() and subsequent operations
-    
+
     ORC_LOG_INFO("Quick project created successfully from: {}", filename.toStdString());
     
     // Remember this source directory

@@ -167,6 +167,8 @@ private:
     void setupUI();
     void setupMenus();
     void setupToolbar();
+    void connectDAGSignals();     ///< Connect DAG model/scene signals to their handlers
+    void recreateDAGModelScene(); ///< Delete and recreate DAG model/scene with signals reconnected
     void updateWindowTitle();
     void updatePreviewInfo();
     void updateUIState();
