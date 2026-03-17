@@ -22,7 +22,6 @@ add_executable(
 target_link_libraries(
         orc-core-unit-tests
         orc-core
-        GTest::gtest_main
         GTest::gmock_main
 )
 
