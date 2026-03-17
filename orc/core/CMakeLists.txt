@@ -15,7 +15,11 @@ list(REMOVE_ITEM EFM_DECODER_SOURCES
 # Also force -O2 on these files even in Debug builds: the EFM pipeline is the
 # dominant CPU cost and STL template code at -O0 is the primary slowdown.  GCC/Clang
 # honour the last -O flag, so -O2 here overrides the target-level -O0.
-set_source_files_properties(${EFM_DECODER_SOURCES} PROPERTIES COMPILE_FLAGS "-w -O2")
+if(MSVC)
+    # MSVC barfs if -O2 is passed in
+else()
+    set_source_files_properties(${EFM_DECODER_SOURCES} PROPERTIES COMPILE_FLAGS "-w -O2")
+endif()
 
 add_library(orc-core STATIC
     # Phase 1: Foundations

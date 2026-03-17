@@ -10,6 +10,8 @@
     "sqlite3",
     "libpng",
     "fftw3",
-    "pkgconf"
+    "pkgconf",
+    "ffmpeg",
+    "gtest"
   ]
 }

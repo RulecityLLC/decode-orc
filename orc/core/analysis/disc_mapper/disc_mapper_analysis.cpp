@@ -141,7 +141,7 @@ AnalysisResult DiscMapperAnalysisTool::analyze(const AnalysisContext& ctx,
             size_t biphase_idx = 0;
             size_t update_interval = std::max(size_t(1), total_biphase / 100);
             for (FieldID fid = field_range.start; fid < field_range.end; fid = FieldID(fid.value() + 1)) {
-                biphase_observer.process_field(*source, fid, &obs_context);
+                biphase_observer.process_field(*source, fid, obs_context);
                 ++biphase_idx;
                 if (progress && biphase_idx % update_interval == 0) {
                     int pct = static_cast<int>(biphase_idx * 100 / total_biphase);
