@@ -102,7 +102,7 @@ namespace orc
 
                 // ===== Run observers to populate observation context =====
                 for (const auto& observer : observers) {
-                    observer->process_field(*representation, field_id, &observation_context);
+                    observer->process_field(*representation, field_id, observation_context);
                 }
 
                 // Write observations to VBI file
