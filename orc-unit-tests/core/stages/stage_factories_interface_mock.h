@@ -20,7 +20,7 @@ namespace orc_unit_test
     {
     public:
         MOCK_METHOD(std::shared_ptr<orc::IDaphneVBISinkStageDeps>, CreateInstanceDaphneVBISinkStageDeps,
-            (orc::TriggerProgressCallback, std::atomic<bool> *, std::atomic<bool> *), (override));
+            (orc::TriggerProgressCallback &, std::atomic<bool> &, std::atomic<bool> &), (override));
     };
 }
 

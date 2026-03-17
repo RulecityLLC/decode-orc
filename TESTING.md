@@ -30,6 +30,9 @@ therefore having a separate *init* method may be wise for non-interface dependen
 
 *See DaphneVBISinkStageDeps for example of constructor injection and init method.*
 
+**Caveat**: If using this 'init method' convention, you may have to use raw pointers instead of referencing objects (ie ISomeObject* instead of ISomeObject&) due to the compiler not allowing the object to temporarily be null before init is called.
+See DaphneVBISinkStageDeps::init for an example of this.
+
 NOTE: We aren't using any dependency injection framework at the moment (we're just manually following this pattern), but we may want to in the future, so I recommend using this 'init method' convention to leave the door open.
 
 ### std::shared_ptr vs just raw pointer for interface?

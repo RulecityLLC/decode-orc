@@ -32,7 +32,7 @@ namespace orc_unit_test
 
             pMockVBIWriterUtil_ = std::make_shared<MockDaphneVBIWriterUtil>();
             pMockFileWriterUint8_ = std::make_shared<MockFileWriter<uint8_t>>();
-            instance_ = std::make_unique<orc::DaphneVBISinkStageDeps>(&mockFactories_, pMockVBIWriterUtil_);
+            instance_ = std::make_unique<orc::DaphneVBISinkStageDeps>(mockFactories_, pMockVBIWriterUtil_);
             instance_->init({}, &isProcessing_, &cancelRequested_);
 
             cancelRequested_.store(false);

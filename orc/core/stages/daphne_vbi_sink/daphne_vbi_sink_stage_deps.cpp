@@ -52,7 +52,7 @@ namespace orc
             ORC_LOG_DEBUG("Opening VBI file for writing: {}", final_vbi_path);
 
             // Open VBI file with buffered writer (1MB buffer chosen arbitrarily)
-            std::shared_ptr<IFileWriter<uint8_t>> vbi_writer = pFactories_->create_instance_buffered_file_writer_uint8(1 * 1024 * 1024);
+            std::shared_ptr<IFileWriter<uint8_t>> vbi_writer = factories_.create_instance_buffered_file_writer_uint8(1 * 1024 * 1024);
             if (!vbi_writer->open(final_vbi_path)) {
                 ORC_LOG_ERROR("Failed to open VBI file for writing: {}", final_vbi_path);
                 return false;
