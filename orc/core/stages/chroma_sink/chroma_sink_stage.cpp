@@ -98,37 +98,18 @@ std::vector<ArtifactPtr> ChromaSinkStage::execute(
     return {};  // No outputs
 }
 
-std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(VideoSystem project_format, SourceType source_type) const
+std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(VideoSystem project_format, SourceType /*source_type*/) const
 {
-    // Determine available decoder types based on project video format AND source type
+    // Determine available decoder types based on project video format
     std::vector<std::string> decoder_options;
     
     if (project_format == VideoSystem::PAL || project_format == VideoSystem::PAL_M) {
-        // PAL-specific decoders
-        if (source_type == SourceType::YC) {
-            // For YC sources, only pal2d and mono make sense (no comb filtering needed)
-            decoder_options = {"auto", "pal2d", "mono"};
-        } else {
-            // For composite sources, offer all PAL decoders
-            decoder_options = {"auto", "pal2d", "transform2d", "transform3d", "mono"};
-        }
+        decoder_options = {"auto", "pal2d", "transform2d", "transform3d", "mono"};
     } else if (project_format == VideoSystem::NTSC) {
-        // NTSC-specific decoders
-        if (source_type == SourceType::YC) {
-            // For YC sources, only ntsc2d and mono make sense
-            decoder_options = {"auto", "ntsc2d", "mono"};
-        } else {
-            // For composite sources, offer all NTSC decoders
-            decoder_options = {"auto", "ntsc1d", "ntsc2d", "ntsc3d", "ntsc3dnoadapt", "mono"};
-        }
+        decoder_options = {"auto", "ntsc1d", "ntsc2d", "ntsc3d", "ntsc3dnoadapt", "mono"};
     } else {
-        // Unknown system - show all (for backwards compatibility or if not set)
-        // But still filter based on source type if known
-        if (source_type == SourceType::YC) {
-            decoder_options = {"auto", "pal2d", "ntsc2d", "mono"};
-        } else {
-            decoder_options = {"auto", "pal2d", "transform2d", "transform3d", "ntsc1d", "ntsc2d", "ntsc3d", "ntsc3dnoadapt", "mono"};
-        }
+        // Unknown system - show all options
+        decoder_options = {"auto", "pal2d", "transform2d", "transform3d", "ntsc1d", "ntsc2d", "ntsc3d", "ntsc3dnoadapt", "mono"};
     }
     
     std::vector<ParameterDescriptor> params = {
