@@ -50,6 +50,9 @@ ChromaSinkStage::ChromaSinkStage()
     , chroma_nr_(0.0)
     , ntsc_phase_comp_(true)
     , simple_pal_(false)
+    , transform_threshold_(0.4)
+    , chroma_weight_(1.0)
+    , adapt_threshold_(1.0)
     , output_padding_(8)
     , embed_audio_(false)
     , embed_closed_captions_(false)
@@ -98,37 +101,18 @@ std::vector<ArtifactPtr> ChromaSinkStage::execute(
     return {};  // No outputs
 }
 
-std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(VideoSystem project_format, SourceType source_type) const
+std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(VideoSystem project_format, SourceType /*source_type*/) const
 {
-    // Determine available decoder types based on project video format AND source type
+    // Determine available decoder types based on project video format
     std::vector<std::string> decoder_options;
     
     if (project_format == VideoSystem::PAL || project_format == VideoSystem::PAL_M) {
-        // PAL-specific decoders
-        if (source_type == SourceType::YC) {
-            // For YC sources, only pal2d and mono make sense (no comb filtering needed)
-            decoder_options = {"auto", "pal2d", "mono"};
-        } else {
-            // For composite sources, offer all PAL decoders
-            decoder_options = {"auto", "pal2d", "transform2d", "transform3d", "mono"};
-        }
+        decoder_options = {"auto", "pal2d", "transform2d", "transform3d", "mono"};
     } else if (project_format == VideoSystem::NTSC) {
-        // NTSC-specific decoders
-        if (source_type == SourceType::YC) {
-            // For YC sources, only ntsc2d and mono make sense
-            decoder_options = {"auto", "ntsc2d", "mono"};
-        } else {
-            // For composite sources, offer all NTSC decoders
-            decoder_options = {"auto", "ntsc1d", "ntsc2d", "ntsc3d", "ntsc3dnoadapt", "mono"};
-        }
+        decoder_options = {"auto", "ntsc1d", "ntsc2d", "ntsc3d", "ntsc3dnoadapt", "mono"};
     } else {
-        // Unknown system - show all (for backwards compatibility or if not set)
-        // But still filter based on source type if known
-        if (source_type == SourceType::YC) {
-            decoder_options = {"auto", "pal2d", "ntsc2d", "mono"};
-        } else {
-            decoder_options = {"auto", "pal2d", "transform2d", "transform3d", "ntsc1d", "ntsc2d", "ntsc3d", "ntsc3dnoadapt", "mono"};
-        }
+        // Unknown system - show all options
+        decoder_options = {"auto", "pal2d", "transform2d", "transform3d", "ntsc1d", "ntsc2d", "ntsc3d", "ntsc3dnoadapt", "mono"};
     }
     
     std::vector<ParameterDescriptor> params = {
@@ -274,6 +258,22 @@ std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(Vide
             ParameterType::BOOL,
             {{}, {}, false, {}, false, std::nullopt}
         });
+        params.push_back(ParameterDescriptor{
+            "chroma_weight",
+            "Chroma Weight",
+            "Chroma weight for 3D adaptive filter (NTSC 3D only). Higher = prefer more 2D result. Range: 0.0-10.0",
+            ParameterType::DOUBLE,
+            {0.0, 10.0, 1.0, {}, false,
+             ParameterDependency{"decoder_type", {"ntsc3d", "ntsc3dnoadapt"}}}
+        });
+        params.push_back(ParameterDescriptor{
+            "adapt_threshold",
+            "Adapt Threshold",
+            "3D adaptive filter threshold (NTSC 3D only). Higher = prefer more 3D result. Range: 0.0-10.0",
+            ParameterType::DOUBLE,
+            {0.0, 10.0, 1.0, {}, false,
+             ParameterDependency{"decoder_type", {"ntsc3d"}}}
+        });
     } else if (project_format == VideoSystem::PAL || project_format == VideoSystem::PAL_M) {
         params.push_back(ParameterDescriptor{
             "simple_pal",
@@ -281,6 +281,14 @@ std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(Vide
             "Use 1D UV filter for Transform PAL (simpler, faster, lower quality)",
             ParameterType::BOOL,
             {{}, {}, false, {}, false,
+             ParameterDependency{"decoder_type", {"transform2d", "transform3d"}}}
+        });
+        params.push_back(ParameterDescriptor{
+            "transform_threshold",
+            "Transform Threshold",
+            "Similarity threshold for Transform PAL decoder (default 0.4). Higher = more transform filtering applied. Range: 0.0-1.0",
+            ParameterType::DOUBLE,
+            {0.0, 1.0, 0.4, {}, false,
              ParameterDependency{"decoder_type", {"transform2d", "transform3d"}}}
         });
     } else {
@@ -293,11 +301,35 @@ std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(Vide
             {{}, {}, false, {}, false, std::nullopt}
         });
         params.push_back(ParameterDescriptor{
+            "chroma_weight",
+            "Chroma Weight",
+            "Chroma weight for 3D adaptive filter (NTSC 3D only). Higher = prefer more 2D result. Range: 0.0-10.0",
+            ParameterType::DOUBLE,
+            {0.0, 10.0, 1.0, {}, false,
+             ParameterDependency{"decoder_type", {"ntsc3d", "ntsc3dnoadapt"}}}
+        });
+        params.push_back(ParameterDescriptor{
+            "adapt_threshold",
+            "Adapt Threshold",
+            "3D adaptive filter threshold (NTSC 3D only). Higher = prefer more 3D result. Range: 0.0-10.0",
+            ParameterType::DOUBLE,
+            {0.0, 10.0, 1.0, {}, false,
+             ParameterDependency{"decoder_type", {"ntsc3d"}}}
+        });
+        params.push_back(ParameterDescriptor{
             "simple_pal",
             "Simple PAL",
             "Use 1D UV filter for Transform PAL (simpler, faster, lower quality)",
             ParameterType::BOOL,
             {{}, {}, false, {}, false,
+             ParameterDependency{"decoder_type", {"transform2d", "transform3d"}}}
+        });
+        params.push_back(ParameterDescriptor{
+            "transform_threshold",
+            "Transform Threshold",
+            "Similarity threshold for Transform PAL decoder (default 0.4). Higher = more transform filtering applied. Range: 0.0-1.0",
+            ParameterType::DOUBLE,
+            {0.0, 1.0, 0.4, {}, false,
              ParameterDependency{"decoder_type", {"transform2d", "transform3d"}}}
         });
     }
@@ -317,6 +349,9 @@ std::map<std::string, ParameterValue> ChromaSinkStage::get_parameters() const
     params["chroma_nr"] = chroma_nr_;
     params["ntsc_phase_comp"] = ntsc_phase_comp_;
     params["simple_pal"] = simple_pal_;
+    params["transform_threshold"] = transform_threshold_;
+    params["chroma_weight"] = chroma_weight_;
+    params["adapt_threshold"] = adapt_threshold_;
     params["output_padding"] = output_padding_;
     params["encoder_preset"] = encoder_preset_;
     params["encoder_crf"] = encoder_crf_;
@@ -402,6 +437,24 @@ bool ChromaSinkStage::set_parameters(const std::map<std::string, ParameterValue>
                     decoder_config_changed = true;
                 }
             }
+        } else if (key == "chroma_weight") {
+            if (std::holds_alternative<double>(value)) {
+                auto new_val = std::get<double>(value);
+                if (new_val != chroma_weight_) {
+                    ORC_LOG_DEBUG("ChromaSink: chroma_weight changed from {} to {}", chroma_weight_, new_val);
+                    chroma_weight_ = new_val;
+                    decoder_config_changed = true;
+                }
+            }
+        } else if (key == "adapt_threshold") {
+            if (std::holds_alternative<double>(value)) {
+                auto new_val = std::get<double>(value);
+                if (new_val != adapt_threshold_) {
+                    ORC_LOG_DEBUG("ChromaSink: adapt_threshold changed from {} to {}", adapt_threshold_, new_val);
+                    adapt_threshold_ = new_val;
+                    decoder_config_changed = true;
+                }
+            }
         } else if (key == "simple_pal") {
             if (std::holds_alternative<bool>(value)) {
                 auto new_val = std::get<bool>(value);
@@ -417,6 +470,15 @@ bool ChromaSinkStage::set_parameters(const std::map<std::string, ParameterValue>
                 if (new_val != simple_pal_) {
                     ORC_LOG_DEBUG("ChromaSink: simple_pal changed from {} to {} (from string '{}')", simple_pal_, new_val, str_val);
                     simple_pal_ = new_val;
+                    decoder_config_changed = true;
+                }
+            }
+        } else if (key == "transform_threshold") {
+            if (std::holds_alternative<double>(value)) {
+                auto new_val = std::get<double>(value);
+                if (new_val != transform_threshold_) {
+                    ORC_LOG_DEBUG("ChromaSink: transform_threshold changed from {} to {}", transform_threshold_, new_val);
+                    transform_threshold_ = new_val;
                     decoder_config_changed = true;
                 }
             }
@@ -604,6 +666,7 @@ bool ChromaSinkStage::trigger(
         config.chromaPhase = chroma_phase_;
         config.yNRLevel = luma_nr_;
         config.simplePAL = simple_pal_;
+        config.transformThreshold = transform_threshold_;
         config.showFFTs = false;
         
         // Set filter mode based on decoder type
@@ -634,6 +697,8 @@ bool ChromaSinkStage::trigger(
         config.cNRLevel = chroma_nr_;
         config.yNRLevel = luma_nr_;
         config.phaseCompensation = ntsc_phase_comp_;
+        config.chromaWeight = chroma_weight_;
+        config.adaptThreshold = adapt_threshold_;
         config.showMap = false;
         
         // Set dimensions based on decoder type
@@ -907,6 +972,7 @@ bool ChromaSinkStage::trigger(
             config.chromaPhase = chroma_phase_;
             config.yNRLevel = luma_nr_;
             config.simplePAL = simple_pal_;
+            config.transformThreshold = transform_threshold_;
             config.showFFTs = false;
             
             if (decoder_type_ == "transform3d") {
@@ -931,6 +997,8 @@ bool ChromaSinkStage::trigger(
             config.cNRLevel = chroma_nr_;
             config.yNRLevel = luma_nr_;
             config.phaseCompensation = ntsc_phase_comp_;
+            config.chromaWeight = chroma_weight_;
+            config.adaptThreshold = adapt_threshold_;
             config.showMap = false;
             
             if (decoder_type_ == "ntsc1d") {
@@ -1594,7 +1662,7 @@ PreviewImage ChromaSinkStage::render_preview(const std::string& option_id, uint6
     // Check if cached decoder matches current configuration
     if (!preview_decoder_cache_.matches_config(effectiveDecoderType, chroma_gain_, 
                                                 chroma_phase_, luma_nr_, chroma_nr_,
-                                                ntsc_phase_comp_, simple_pal_, false)) {
+                                                ntsc_phase_comp_, simple_pal_, false, transform_threshold_, chroma_weight_, adapt_threshold_)) {
         // Configuration changed - clear old decoders and create new ones
         ORC_LOG_DEBUG("ChromaSink: Decoder config changed, recreating '{}' decoder", effectiveDecoderType);
         preview_decoder_cache_.mono_decoder.reset();
@@ -1608,6 +1676,9 @@ PreviewImage ChromaSinkStage::render_preview(const std::string& option_id, uint6
         preview_decoder_cache_.ntsc_phase_comp = ntsc_phase_comp_;
         preview_decoder_cache_.simple_pal = simple_pal_;
         preview_decoder_cache_.blackandwhite = false;
+        preview_decoder_cache_.transform_threshold = transform_threshold_;
+        preview_decoder_cache_.chroma_weight = chroma_weight_;
+        preview_decoder_cache_.adapt_threshold = adapt_threshold_;
         
         // Create appropriate decoder based on type
         if (effectiveDecoderType == "mono") {
@@ -1622,6 +1693,7 @@ PreviewImage ChromaSinkStage::render_preview(const std::string& option_id, uint6
             config.chromaPhase = chroma_phase_;
             config.yNRLevel = luma_nr_;
             config.simplePAL = simple_pal_;
+            config.transformThreshold = transform_threshold_;
             config.showFFTs = false;
             
             if (effectiveDecoderType == "transform3d") {
@@ -1642,6 +1714,8 @@ PreviewImage ChromaSinkStage::render_preview(const std::string& option_id, uint6
             config.cNRLevel = chroma_nr_;
             config.yNRLevel = luma_nr_;
             config.phaseCompensation = ntsc_phase_comp_;
+            config.chromaWeight = chroma_weight_;
+            config.adaptThreshold = adapt_threshold_;
             config.showMap = false;
             
             if (effectiveDecoderType == "ntsc1d") {

@@ -143,11 +143,11 @@ void Comb::decodeFrames(const std::vector<SourceField> &inputFields, int32_t sta
     
     if (is_yc_source) {
         // YC DECODE PATH - Y is already clean, only demodulate C
-        ORC_LOG_INFO("Comb: Using YC decode path (separate Y/C channels)");
+        ORC_LOG_TRACE("Comb: Using YC decode path (separate Y/C channels)");
         decodeFramesYC(inputFields, startIndex, endIndex, componentFrames);
     } else {
         // COMPOSITE DECODE PATH - full comb filter for Y/C separation
-        ORC_LOG_DEBUG("Comb: Using composite decode path (Y+C modulated)");
+        ORC_LOG_TRACE("Comb: Using composite decode path (Y+C modulated)");
         decodeFramesComposite(inputFields, startIndex, endIndex, componentFrames);
     }
 }
@@ -580,10 +580,10 @@ void Comb::FrameBuffer::getBestCandidate(int32_t lineNumber, int32_t h,
 {
     Candidate candidates[8];
 
-    // Bias the comparison so that we prefer 3D results, then 2D, then 1D
-    static constexpr double LINE_BONUS = -2.0;
-    static constexpr double FIELD_BONUS = LINE_BONUS - 2.0;
-    static constexpr double FRAME_BONUS = FIELD_BONUS - 2.0;
+    // adaptThreshold scales these bonuses: higher = stronger 3D preference
+    const double LINE_BONUS = -2.0 * configuration.adaptThreshold;
+    const double FIELD_BONUS = LINE_BONUS - (2.0 * configuration.adaptThreshold);
+    const double FRAME_BONUS = FIELD_BONUS - (2.0 * configuration.adaptThreshold);
 
     // 1D: Same line, 2 samples left and right
     candidates[CAND_LEFT]  = getCandidate(lineNumber, h, *this, lineNumber, h - 2, 0);
@@ -674,7 +674,7 @@ Comb::FrameBuffer::Candidate Comb::FrameBuffer::getCandidate(int32_t refLineNumb
     // Weaken this relative to luma, to avoid spurious colour in the 2D result from showing through
     iqPenalty = (iqPenalty / 2 / irescale) * 0.28;
 
-    result.penalty = yPenalty + iqPenalty + adjustPenalty;
+    result.penalty = yPenalty + iqPenalty + adjustPenalty * configuration.chromaWeight;
     return result;
 }
 
