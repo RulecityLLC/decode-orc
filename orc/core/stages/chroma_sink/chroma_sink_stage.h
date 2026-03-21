@@ -144,15 +144,33 @@ private:
         double adapt_threshold;
         
         std::unique_ptr<MonoDecoder> mono_decoder;
+        std::unique_ptr<MonoDecoder> yc_mono_decoder;
         std::unique_ptr<PalColour> pal_decoder;
         std::unique_ptr<Comb> ntsc_decoder;
         
         bool matches_config(const std::string& dec_type, double cg, double cp, 
                            double ln, double cn, bool npc, bool sp, bool bw, double tt, double cw, double at) const {
-            return decoder_type == dec_type && chroma_gain == cg && 
-                   chroma_phase == cp && luma_nr == ln && chroma_nr == cn &&
-                   ntsc_phase_comp == npc && simple_pal == sp && blackandwhite == bw &&
-                   transform_threshold == tt && chroma_weight == cw && adapt_threshold == at;
+            bool config_matches = decoder_type == dec_type && chroma_gain == cg &&
+                                  chroma_phase == cp && luma_nr == ln && chroma_nr == cn &&
+                                  ntsc_phase_comp == npc && simple_pal == sp && blackandwhite == bw &&
+                                  transform_threshold == tt && chroma_weight == cw && adapt_threshold == at;
+
+            if (!config_matches) {
+                return false;
+            }
+
+            // Keep cache validity strict by ensuring the active decoder pointer shape
+            // matches the requested decoder type.
+            if (dec_type == "mono") {
+                return mono_decoder != nullptr && pal_decoder == nullptr && ntsc_decoder == nullptr &&
+                       yc_mono_decoder == nullptr;
+            }
+
+            if (dec_type == "pal2d" || dec_type == "transform2d" || dec_type == "transform3d") {
+                return mono_decoder == nullptr && pal_decoder != nullptr && ntsc_decoder == nullptr;
+            }
+
+            return mono_decoder == nullptr && pal_decoder == nullptr && ntsc_decoder != nullptr;
         }
     };
     mutable PreviewDecoderCache preview_decoder_cache_;
@@ -189,6 +207,10 @@ protected:
     TriggerProgressCallback progress_callback_;
 
 private:
+    std::unique_ptr<MonoDecoder> create_yc_mono_decoder(
+        const orc::SourceParameters& videoParams
+    ) const;
+
     
     // Helper methods for integration
     SourceField convertToSourceField(
