@@ -49,8 +49,10 @@ if(BUILD_UNIT_TESTS)
     add_subdirectory(orc-unit-tests)
 endif()
 
-# MVP architecture validation (run via: ctest -R MVPArchitectureCheck)
+# MVP architecture validation
+# Run via: ctest -R MVPArchitectureCheck  OR  ctest -L mvp
 add_test(
     NAME MVPArchitectureCheck
     COMMAND ${BASH_EXECUTABLE} ${CMAKE_SOURCE_DIR}/cmake/check_mvp_architecture.sh
 )
+set_tests_properties(MVPArchitectureCheck PROPERTIES LABELS "mvp")

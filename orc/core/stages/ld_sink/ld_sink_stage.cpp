@@ -119,35 +119,37 @@ bool LDSinkStage::trigger(
     trigger_status_ = "Starting export...";
     is_processing_.store(true);
     cancel_requested_.store(false);
+
+    const auto fail_trigger = [this](const std::string& status) {
+        trigger_status_ = status;
+        is_processing_.store(false);
+        return false;
+    };
     
     // Validate parameters
     auto it = parameters.find("output_path");
     if (it == parameters.end() || !std::holds_alternative<std::string>(it->second)) {
-        trigger_status_ = "Error: No output path specified";
         ORC_LOG_ERROR("LDSink: No output_path parameter");
-        return false;
+        return fail_trigger("Error: No output path specified");
     }
     
     std::string output_path = std::get<std::string>(it->second);
     if (output_path.empty()) {
-        trigger_status_ = "Error: Output path is empty";
         ORC_LOG_ERROR("LDSink: output_path is empty");
-        return false;
+        return fail_trigger("Error: Output path is empty");
     }
     
     // Validate inputs
     if (inputs.empty()) {
-        trigger_status_ = "Error: No input connected";
         ORC_LOG_ERROR("LDSink: No input provided");
-        return false;
+        return fail_trigger("Error: No input connected");
     }
     
     // Get input representation
     auto representation = std::dynamic_pointer_cast<const VideoFieldRepresentation>(inputs[0]);
     if (!representation) {
-        trigger_status_ = "Error: Input is not a video field representation";
         ORC_LOG_ERROR("LDSink: Input is not VideoFieldRepresentation");
-        return false;
+        return fail_trigger("Error: Input is not a video field representation");
     }
     
     // Write TBC and metadata

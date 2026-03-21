@@ -138,7 +138,7 @@ public:
         const std::map<std::string, ParameterValue>& parameters, ObservationContext& observation_context) override;
     
     size_t required_input_count() const override { return 1; }
-    size_t output_count() const override { return 0; }  // Variable: one per input
+    size_t output_count() const override { return 1; }
     
     // PreviewableStage interface
     bool supports_preview() const override { return true; }
@@ -165,7 +165,7 @@ public:
 
 private:
     // Current parameters
-    std::string dropout_map_str_;
+    std::string dropout_map_str_ = "[]";
     
     // Cached output for preview rendering
     mutable std::shared_ptr<const VideoFieldRepresentation> cached_output_;

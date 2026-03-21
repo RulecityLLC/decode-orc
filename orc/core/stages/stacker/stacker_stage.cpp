@@ -1562,7 +1562,57 @@ std::vector<ParameterDescriptor> StackerStage::get_parameter_descriptors(VideoSy
 
 std::map<std::string, ParameterValue> StackerStage::get_parameters() const
 {
-    return parameters_;
+    auto mode_to_string = [this]() -> std::string {
+        switch (m_mode) {
+            case -1:
+                return "Auto";
+            case 0:
+                return "Mean";
+            case 1:
+                return "Median";
+            case 2:
+                return "Smart Mean";
+            case 3:
+                return "Smart Neighbor";
+            case 4:
+                return "Neighbor";
+            default:
+                return "Auto";
+        }
+    };
+    auto audio_stacking_to_string = [this]() -> std::string {
+        switch (m_audio_stacking_mode) {
+            case AudioStackingMode::DISABLED:
+                return "Disabled";
+            case AudioStackingMode::MEAN:
+                return "Mean";
+            case AudioStackingMode::MEDIAN:
+                return "Median";
+            default:
+                return "Mean";
+        }
+    };
+    auto efm_stacking_to_string = [this]() -> std::string {
+        switch (m_efm_stacking_mode) {
+            case EFMStackingMode::DISABLED:
+                return "Disabled";
+            case EFMStackingMode::MEAN:
+                return "Mean";
+            case EFMStackingMode::MEDIAN:
+                return "Median";
+            default:
+                return "Mean";
+        }
+    };
+
+    return {
+        {"mode", ParameterValue{mode_to_string()}},
+        {"smart_threshold", ParameterValue{m_smart_threshold}},
+        {"no_diff_dod", ParameterValue{m_no_diff_dod}},
+        {"passthrough", ParameterValue{m_passthrough}},
+        {"audio_stacking", ParameterValue{audio_stacking_to_string()}},
+        {"efm_stacking", ParameterValue{efm_stacking_to_string()}}
+    };
 }
 
 bool StackerStage::set_parameters(const std::map<std::string, ParameterValue>& params)
