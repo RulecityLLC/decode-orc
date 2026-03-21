@@ -238,6 +238,7 @@
             doxygen
             graphviz
             ninja
+            zip
 
             # Version control
             git

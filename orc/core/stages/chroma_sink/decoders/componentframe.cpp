@@ -17,6 +17,13 @@ ComponentFrame::ComponentFrame()
 {
 }
 
+void ComponentFrame::merge_luma_from(const ComponentFrame& luma_source)
+{
+    assert(width == luma_source.width);
+    assert(height == luma_source.height);
+    yData = luma_source.yData;
+}
+
 void ComponentFrame::init(const ::orc::SourceParameters &videoParameters, bool mono)
 {
     width = videoParameters.field_width;

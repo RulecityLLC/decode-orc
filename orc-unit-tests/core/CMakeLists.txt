@@ -14,6 +14,9 @@ find_package(GTest REQUIRED)
 add_executable(
         orc-core-unit-tests
 
+        stages/chroma_sink/componentframe_test.cpp
+        stages/chroma_sink/chroma_sink_stage_defaults_test.cpp
+        stages/chroma_sink/monodecoder_test.cpp
         stages/daphne_vbi_sink/daphne_vbi_writer_util_test.cpp
         stages/daphne_vbi_sink/daphne_vbi_sink_stage_deps_test.cpp
         stages/daphne_vbi_sink/daphne_vbi_sink_stage_test.cpp

@@ -82,6 +82,13 @@ public:
 		vData = _vData;
 	}
 
+    // Replace this frame's Y plane with the Y plane from luma_source.
+    // U and V planes are untouched. Both frames must have identical dimensions.
+    // This is the in-process equivalent of the FFmpeg extractplanes/mergeplanes
+    // filter used by tbc-video-export to combine the mono Y and colour UV
+    // outputs for Y/C (colour-under) sources.
+    void merge_luma_from(const ComponentFrame& luma_source);
+
     int32_t getWidth() const {
         return width;
     }

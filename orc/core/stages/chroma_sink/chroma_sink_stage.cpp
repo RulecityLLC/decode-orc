@@ -29,6 +29,7 @@
 #include <fstream>
 #include <chrono>
 #include <algorithm>
+#include <cmath>
 #include <thread>
 #include <mutex>
 #include <atomic>
@@ -63,6 +64,17 @@ ChromaSinkStage::ChromaSinkStage()
 }
 
 ChromaSinkStage::~ChromaSinkStage() {
+}
+
+std::unique_ptr<MonoDecoder> ChromaSinkStage::create_yc_mono_decoder(
+    const orc::SourceParameters& videoParams
+) const
+{
+    MonoDecoder::MonoConfiguration config;
+    config.yNRLevel = luma_nr_;
+    config.filterChroma = false;  // Y-TBC contains no chroma to filter.
+    config.videoParameters = videoParams;
+    return std::make_unique<MonoDecoder>(config);
 }
 
 NodeTypeInfo ChromaSinkStage::get_node_type_info() const
@@ -101,7 +113,7 @@ std::vector<ArtifactPtr> ChromaSinkStage::execute(
     return {};  // No outputs
 }
 
-std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(VideoSystem project_format, SourceType /*source_type*/) const
+std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(VideoSystem project_format, SourceType source_type) const
 {
     // Determine available decoder types based on project video format
     std::vector<std::string> decoder_options;
@@ -115,6 +127,13 @@ std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(Vide
         decoder_options = {"auto", "pal2d", "transform2d", "transform3d", "ntsc1d", "ntsc2d", "ntsc3d", "ntsc3dnoadapt", "mono"};
     }
     
+    std::string decoder_description =
+        "Chroma decoder to use: auto, pal2d, transform2d, transform3d, ntsc1d, ntsc2d, ntsc3d, ntsc3dnoadapt, mono";
+    if (source_type == SourceType::YC) {
+        decoder_description += "\n"
+                               "YC sources: transform2d/transform3d are not compatible and will fall back to pal2d.";
+    }
+
     std::vector<ParameterDescriptor> params = {
         ParameterDescriptor{
             "output_path",
@@ -127,7 +146,7 @@ std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(Vide
         ParameterDescriptor{
             "decoder_type",
             "Decoder Type",
-            "Chroma decoder to use: auto, pal2d, transform2d, transform3d, ntsc1d, ntsc2d, ntsc3d, ntsc3dnoadapt, mono",
+            decoder_description,
             ParameterType::STRING,
             {{}, {}, {}, decoder_options, false, std::nullopt}
         },
@@ -256,7 +275,7 @@ std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(Vide
             "NTSC Phase Compensation",
             "Adjust phase per-line using burst phase (NTSC only)",
             ParameterType::BOOL,
-            {{}, {}, false, {}, false, std::nullopt}
+            {{}, {}, true, {}, false, std::nullopt}
         });
         params.push_back(ParameterDescriptor{
             "chroma_weight",
@@ -298,7 +317,7 @@ std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(Vide
             "NTSC Phase Compensation",
             "Adjust phase per-line using burst phase (NTSC only)",
             ParameterType::BOOL,
-            {{}, {}, false, {}, false, std::nullopt}
+            {{}, {}, true, {}, false, std::nullopt}
         });
         params.push_back(ParameterDescriptor{
             "chroma_weight",
@@ -630,8 +649,11 @@ bool ChromaSinkStage::trigger(
     // without the threading infrastructure for now
     
     std::unique_ptr<MonoDecoder> monoDecoder;
+    std::unique_ptr<MonoDecoder> ycMonoDecoder;
     std::unique_ptr<PalColour> palDecoder;
     std::unique_ptr<Comb> ntscDecoder;
+
+    const bool is_yc_source = vfr->has_separate_channels();
     
     bool useMonoDecoder = (decoder_type_ == "mono");
     bool usePalDecoder = (decoder_type_ == "auto" && videoParams.system == orc::VideoSystem::PAL) ||
@@ -649,7 +671,6 @@ bool ChromaSinkStage::trigger(
     }
     else if (usePalDecoder) {
         // Check if we're trying to use Transform PAL filters with YC sources
-        bool is_yc_source = vfr->has_separate_channels();
         bool isTransformFilter = (decoder_type_ == "transform2d" || decoder_type_ == "transform3d");
         
         if (is_yc_source && isTransformFilter) {
@@ -731,6 +752,11 @@ bool ChromaSinkStage::trigger(
         trigger_in_progress_.store(false);
         return false;
     }
+
+    if (is_yc_source && !useMonoDecoder) {
+        ycMonoDecoder = create_yc_mono_decoder(videoParams);
+        ORC_LOG_DEBUG("ChromaSink: YC source dual-decode enabled (mono Y route + colour UV route)");
+    }
     
     // 5. Determine frame range to process
     // Use the field_range from VFR (which may be filtered by upstream stages like field_map)
@@ -761,28 +787,38 @@ bool ChromaSinkStage::trigger(
     // This relationship is consistent across both NTSC and PAL systems.
     // Frame N (1-based) consists of fields (2*N-2, 2*N-1) in 0-based indexing.
     
-    // 6. Determine decoder lookbehind/lookahead requirements
-    int32_t lookBehindFrames = 0;
-    int32_t lookAheadFrames = 0;
+    // 6. Determine decoder lookbehind/lookahead requirements.
+    // For YC dual-decode, this is always driven by the colour route decoder.
+    // The mono Y route is decoded over the same extended range only to keep
+    // frame/field indexing aligned for merge_luma_from().
+    const bool use_yc_dual_decode = (ycMonoDecoder != nullptr);
+    int32_t colourLookBehindFrames = 0;
+    int32_t colourLookAheadFrames = 0;
     
     if (palDecoder) {
         // PalColour internally uses Transform3D which needs lookbehind/lookahead
         if (decoder_type_ == "transform3d" || decoder_type_ == "transform2d") {
             // Transform PAL decoders need extra fields for FFT overlap
             // These values come from TransformPal3D::getLookBehind/Ahead()
-            lookBehindFrames = (decoder_type_ == "transform3d") ? 2 : 0;  // (HALFZTILE + 1) / 2
-            lookAheadFrames = (decoder_type_ == "transform3d") ? 4 : 0;   // (ZTILE - 1 + 1) / 2
+            colourLookBehindFrames = (decoder_type_ == "transform3d") ? 2 : 0;  // (HALFZTILE + 1) / 2
+            colourLookAheadFrames = (decoder_type_ == "transform3d") ? 4 : 0;   // (ZTILE - 1 + 1) / 2
         }
     } else if (ntscDecoder) {
         // NTSC 3D decoder might need lookbehind/lookahead
         if (decoder_type_ == "ntsc3d" || decoder_type_ == "ntsc3dnoadapt") {
-            lookBehindFrames = 1;  // From Comb::Configuration::getLookBehind()
-            lookAheadFrames = 2;   // From Comb::Configuration::getLookAhead()
+            colourLookBehindFrames = 1;  // From Comb::Configuration::getLookBehind()
+            colourLookAheadFrames = 2;   // From Comb::Configuration::getLookAhead()
         }
     }
+
+    int32_t lookBehindFrames = colourLookBehindFrames;
+    int32_t lookAheadFrames = colourLookAheadFrames;
     
     ORC_LOG_DEBUG("ChromaSink: Decoder requires lookBehind={} frames, lookAhead={} frames",
                  lookBehindFrames, lookAheadFrames);
+    if (use_yc_dual_decode) {
+        ORC_LOG_DEBUG("ChromaSink: YC dual decode lookaround is colour-route driven; Y-route reuses the same extended range for alignment");
+    }
     
     // 7. Calculate extended frame range including lookbehind/lookahead
     // Note: extended_start_frame can be negative (will use black padding)
@@ -955,6 +991,7 @@ bool ChromaSinkStage::trigger(
     auto workerFunc = [&]() {
         // Create thread-local decoder instance
         std::unique_ptr<MonoDecoder> threadMonoDecoder;
+        std::unique_ptr<MonoDecoder> threadYcMonoDecoder;
         std::unique_ptr<PalColour> threadPalDecoder;
         std::unique_ptr<Comb> threadNtscDecoder;
         
@@ -1017,6 +1054,10 @@ bool ChromaSinkStage::trigger(
             
             threadNtscDecoder = std::make_unique<Comb>();
             threadNtscDecoder->updateConfiguration(videoParams, config);
+        }
+
+        if (ycMonoDecoder) {
+            threadYcMonoDecoder = create_yc_mono_decoder(videoParams);
         }
         
         while (!abortFlag) {
@@ -1123,7 +1164,42 @@ bool ChromaSinkStage::trigger(
             singleOutput.resize(1);
             
             // Decode this ONE frame using thread-local decoder
-            if (threadMonoDecoder) {
+            if (threadYcMonoDecoder) {
+                std::vector<SourceField> ycYFields;
+                std::vector<SourceField> ycCFields;
+                ycYFields.reserve(frameFields.size());
+                ycCFields.reserve(frameFields.size());
+
+                for (const auto& field : frameFields) {
+                    SourceField yField = field;
+                    yField.is_yc = false;
+                    yField.data = field.luma_data;
+                    yField.luma_data.clear();
+                    yField.chroma_data.clear();
+                    ycYFields.push_back(std::move(yField));
+
+                    SourceField cField = field;
+                    cField.is_yc = false;
+                    cField.data = field.chroma_data;
+                    cField.luma_data.clear();
+                    cField.chroma_data.clear();
+                    ycCFields.push_back(std::move(cField));
+                }
+
+                std::vector<::ComponentFrame> yFrames(1);
+                std::vector<::ComponentFrame> uvFrames(1);
+
+                threadYcMonoDecoder->decodeFrames(ycYFields, frameStartIndex, frameEndIndex, yFrames);
+
+                if (threadPalDecoder) {
+                    threadPalDecoder->decodeFrames(ycCFields, frameStartIndex, frameEndIndex, uvFrames);
+                } else if (threadNtscDecoder) {
+                    threadNtscDecoder->decodeFrames(ycCFields, frameStartIndex, frameEndIndex, uvFrames);
+                }
+
+                uvFrames[0].merge_luma_from(yFrames[0]);
+                singleOutput[0] = std::move(uvFrames[0]);
+            } else if (threadMonoDecoder) {
                 threadMonoDecoder->decodeFrames(frameFields, frameStartIndex, frameEndIndex, singleOutput);
             } else if (threadPalDecoder) {
                 threadPalDecoder->decodeFrames(frameFields, frameStartIndex, frameEndIndex, singleOutput);
@@ -1666,6 +1742,7 @@ PreviewImage ChromaSinkStage::render_preview(const std::string& option_id, uint6
         // Configuration changed - clear old decoders and create new ones
         ORC_LOG_DEBUG("ChromaSink: Decoder config changed, recreating '{}' decoder", effectiveDecoderType);
         preview_decoder_cache_.mono_decoder.reset();
+        preview_decoder_cache_.yc_mono_decoder.reset();
         preview_decoder_cache_.pal_decoder.reset();
         preview_decoder_cache_.ntsc_decoder.reset();
         preview_decoder_cache_.decoder_type = effectiveDecoderType;
@@ -1735,6 +1812,10 @@ PreviewImage ChromaSinkStage::render_preview(const std::string& option_id, uint6
             preview_decoder_cache_.ntsc_decoder = std::make_unique<Comb>();
             preview_decoder_cache_.ntsc_decoder->updateConfiguration(videoParams, config);
         }
+
+        if (is_yc_source && effectiveDecoderType != "mono") {
+            preview_decoder_cache_.yc_mono_decoder = create_yc_mono_decoder(videoParams);
+        }
         ORC_LOG_DEBUG("ChromaSink: Created new '{}' decoder for preview", effectiveDecoderType);
     } else {
         ORC_LOG_DEBUG("ChromaSink: Reusing cached '{}' decoder", effectiveDecoderType);
@@ -1754,7 +1835,68 @@ PreviewImage ChromaSinkStage::render_preview(const std::string& option_id, uint6
     auto decode_start = std::chrono::high_resolution_clock::now();
     
     std::string active_decoder = "none";
-    if (preview_decoder_cache_.mono_decoder) {
+    if (preview_decoder_cache_.yc_mono_decoder) {
+        std::vector<SourceField> ycYFields;
+        std::vector<SourceField> ycCFields;
+        ycYFields.reserve(inputFields.size());
+        ycCFields.reserve(inputFields.size());
+
+        for (const auto& field : inputFields) {
+            SourceField yField = field;
+            yField.is_yc = false;
+            yField.data = field.luma_data;
+            yField.luma_data.clear();
+            yField.chroma_data.clear();
+            ycYFields.push_back(std::move(yField));
+
+            SourceField cField = field;
+            cField.is_yc = false;
+            cField.data = field.chroma_data;
+            cField.luma_data.clear();
+            cField.chroma_data.clear();
+            ycCFields.push_back(std::move(cField));
+        }
+
+        std::vector<::ComponentFrame> yFrames(1);
+        std::vector<::ComponentFrame> uvFrames(1);
+
+        preview_decoder_cache_.yc_mono_decoder->decodeFrames(ycYFields, frameStartIndex, frameEndIndex, yFrames);
+
+        if (preview_decoder_cache_.pal_decoder) {
+            active_decoder = "yc+pal";
+            preview_decoder_cache_.pal_decoder->decodeFrames(ycCFields, frameStartIndex, frameEndIndex, uvFrames);
+        } else if (preview_decoder_cache_.ntsc_decoder) {
+            active_decoder = "yc+ntsc";
+            preview_decoder_cache_.ntsc_decoder->decodeFrames(ycCFields, frameStartIndex, frameEndIndex, uvFrames);
+        } else {
+            active_decoder = "yc+mono";
+            uvFrames[0] = yFrames[0];
+        }
+
+        uvFrames[0].merge_luma_from(yFrames[0]);
+
+        // Temporary diagnostic: verify merged output Y matches mono-Y route exactly.
+        const auto& mergedY = *uvFrames[0].getY();
+        const auto& monoY = *yFrames[0].getY();
+        if (mergedY.size() == monoY.size() && !monoY.empty()) {
+            double max_abs_diff = 0.0;
+            double sum_abs_diff = 0.0;
+            for (size_t i = 0; i < monoY.size(); ++i) {
+                double diff = std::abs(mergedY[i] - monoY[i]);
+                max_abs_diff = std::max(max_abs_diff, diff);
+                sum_abs_diff += diff;
+            }
+            ORC_LOG_DEBUG(
+                "ChromaSink: YC preview merge check frame {} decoder='{}' Y abs diff max={:.6f} avg={:.6f}",
+                index,
+                active_decoder,
+                max_abs_diff,
+                sum_abs_diff / static_cast<double>(monoY.size())
+            );
+        }
+
+        outputFrames[0] = std::move(uvFrames[0]);
+    } else if (preview_decoder_cache_.mono_decoder) {
         active_decoder = "mono";
         preview_decoder_cache_.mono_decoder->decodeFrames(inputFields, frameStartIndex, frameEndIndex, outputFrames);
     } else if (preview_decoder_cache_.pal_decoder) {

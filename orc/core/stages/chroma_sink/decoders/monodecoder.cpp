@@ -106,31 +106,41 @@ void MonoDecoder::decodeFrames(const std::vector<SourceField>& inputFields,
 		
 		const int32_t lineOffset = videoParameters.active_area_cropping_applied ? videoParameters.first_active_frame_line : 0;
 		const int32_t xOffset = videoParameters.active_area_cropping_applied ? videoParameters.active_video_start : 0;
+        const int32_t fieldWidth = videoParameters.field_width;
 		
 		// Check if this is a YC source
 		bool is_yc_source = !inputFields.empty() && inputFields[0].is_yc;
 		
 		for (int32_t fieldIndex = startIndex, frameIndex = 0; fieldIndex < endIndex; fieldIndex += 2, frameIndex++) {
 			componentFrames[frameIndex].init(videoParameters, ignoreUV);
-			for (int32_t y = videoParameters.first_active_frame_line; y < videoParameters.last_active_frame_line; y++) {
-				const uint16_t *inputLine;
-				
-				if (is_yc_source) {
-					// YC source: use luma channel (already clean, no chroma subcarrier)
-					const std::vector<uint16_t> &inputFieldData = (y % 2) == 0 ? 
-						inputFields[fieldIndex].luma_data : inputFields[fieldIndex+1].luma_data;
-					inputLine = inputFieldData.data() + ((y / 2) * videoParameters.field_width);
-				} else {
-					// Composite source: use composite data (includes chroma subcarrier)
-					const std::vector<uint16_t> &inputFieldData = (y % 2) == 0 ? 
-						inputFields[fieldIndex].data : inputFields[fieldIndex+1].data;
-					inputLine = inputFieldData.data() + ((y / 2) * videoParameters.field_width);
-				}
 
+            const SourceField *firstField = fieldIndex < static_cast<int32_t>(inputFields.size()) ? &inputFields[fieldIndex] : nullptr;
+            const SourceField *secondField = (fieldIndex + 1) < static_cast<int32_t>(inputFields.size()) ? &inputFields[fieldIndex + 1] : nullptr;
+
+			for (int32_t y = videoParameters.first_active_frame_line; y < videoParameters.last_active_frame_line; y++) {
 				// Copy the signal to Y (leaving U and V blank)
 				double *outY = componentFrames[frameIndex].y(y - lineOffset);
-				for (int32_t x = videoParameters.active_video_start; x < videoParameters.active_video_end; x++) {
-					outY[x - xOffset] = inputLine[x];
+                const SourceField *sourceField = nullptr;
+                if (firstField && ((y & 1) == firstField->getOffset())) {
+                    sourceField = firstField;
+                } else if (secondField && ((y & 1) == secondField->getOffset())) {
+                    sourceField = secondField;
+                }
+
+                const std::vector<uint16_t> *inputFieldData = nullptr;
+                if (sourceField) {
+                    inputFieldData = is_yc_source ? &sourceField->luma_data : &sourceField->data;
+                }
+
+                const int32_t fieldLine = sourceField ? ((y - sourceField->getOffset()) / 2) : -1;
+                const int32_t availableLines = inputFieldData ? static_cast<int32_t>(inputFieldData->size() / fieldWidth) : 0;
+                if (!inputFieldData || fieldLine < 0 || fieldLine >= availableLines) {
+                    continue;
+                }
+
+                const uint16_t *inputLine = inputFieldData->data() + (fieldLine * fieldWidth);
+                for (int32_t x = videoParameters.active_video_start; x < videoParameters.active_video_end; x++) {
+                    outY[x - xOffset] = inputLine[x];
 				}
 			}
 			doYNR(componentFrames[frameIndex]);
