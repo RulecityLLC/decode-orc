@@ -136,3 +136,44 @@ make
 # Run all tests
 ctest
 ```
+
+## Test labels and standard invocations
+
+For required stage-level definition-of-done criteria (new stages and stage behavior changes), see [docs/stage-test-expectations.md](docs/stage-test-expectations.md).
+
+CTest labels are used to keep the suite easy to slice during development and in CI.
+
+- `unit`: All GoogleTest-based core unit tests. This is the fast, default label for test-driven iteration.
+- `mvp`: The architecture boundary check only (`MVPArchitectureCheck`).
+- `sources`: Source-stage unit tests.
+- `transforms`: Transform-stage unit tests.
+- `sinks`: Sink-stage unit tests, including the existing chroma and Daphne baselines.
+- `contracts`: Cross-stage Phase 5 contract tests for registry, node discovery, parameter/default parity, and project-to-DAG wiring.
+
+Standard invocations:
+
+```bash
+# All unit tests (fast path during development)
+ctest -L unit --output-on-failure
+
+# MVP architecture check only
+ctest -L mvp --output-on-failure
+
+# Everything (matches the CI expectation)
+ctest --output-on-failure
+
+# Narrow to a specific stage family or contract area
+ctest -L unit -L sources --output-on-failure
+ctest -L unit -L transforms --output-on-failure
+ctest -L unit -L sinks --output-on-failure
+ctest -L unit -L contracts --output-on-failure
+
+# Focus on a single stage family test name while keeping the unit label filter
+ctest -L unit -R SourceAlign --output-on-failure
+```
+
+Label assignment rules:
+
+- Core unit-test executables are registered with `gtest_discover_tests(... PROPERTIES LABELS ...)` in [orc-unit-tests/core/CMakeLists.txt](orc-unit-tests/core/CMakeLists.txt).
+- Every unit executable is labeled with `unit` and exactly one family label (`sources`, `transforms`, `sinks`, or `contracts`).
+- The top-level `MVPArchitectureCheck` test is labeled `mvp` in [CMakeLists.txt](CMakeLists.txt).

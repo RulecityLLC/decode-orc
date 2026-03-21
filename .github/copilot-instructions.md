@@ -87,6 +87,7 @@ decode-orc/
   - `ezpwd-reed-solomon` headers are fetched from GitHub during `nix develop` / `nix build`
 - No git submodules required; Nix handles everything automatically
 - Simply run `nix develop` and dependencies are available
+- When already working inside `nix develop`, if a temporary extra tool is needed to complete the task, prefer `nix shell` to pull that tool into the active workflow instead of installing it through the host system or assuming it already exists
 
 **Non-Nix (CMake/vcpkg) workflow:**
 - Dependencies are managed via `vcpkg.json` (manifest mode)
@@ -170,6 +171,45 @@ From TESTING.md, the project targets ~80% unit test coverage with these principl
 2. Mock external dependencies (file I/O, network, etc.).
 3. Run `ctest --test-dir build --output-on-failure` locally.
 4. Verify no new MVP violations: `ctest -R MVPArchitectureCheck` or `cmake --build build --target check-mvp`.
+
+### New Stage Expectations (Required)
+
+The current stage portfolio has complete stage-family unit-test coverage (source, transform, sink) and shared contract coverage. New stages must preserve this standard immediately when introduced.
+
+**Required for every new stage (`orc/core/stages/<stage_id>`):**
+- Add a matching unit-test suite under `orc-unit-tests/core/stages/<stage_id>` in the same PR.
+- Register/build the suite in `orc-unit-tests/core/CMakeLists.txt` using the established `gtest_discover_tests` pattern and `unit` label.
+- Ensure the stage is included in stage inventory/registration checks (`StageRegistry` and node-type discovery) so contract tests continue to validate global wiring.
+
+**Family-specific minimum behavior coverage:**
+- **Source stage:**
+  - descriptor schema + runtime default parity (including Edit Parameters defaults)
+  - valid parameter path success + artifact metadata expectations
+  - invalid parameter/dependency-failure status behavior
+- **Transform stage:**
+  - input precondition handling (missing/wrong/incompatible artifacts)
+  - deterministic transformation behavior on controlled fixtures
+  - representative parameter-branch behavior and failure propagation
+- **Sink stage:**
+  - output parameter schema/default parity
+  - dependency interaction/status contracts using interface mocks where seams exist
+  - explicit success/failure trigger status behavior without real filesystem/network/database/system-clock coupling
+
+**Cross-cutting contract expectations for new stages:**
+- Stage interface invariants remain coherent (`required_input_count`, `output_count`, node metadata vs runtime behavior).
+- Parameter descriptors/defaults and runtime parsing remain consistent.
+- Observation declarations, where used, remain schema/type-safe and deterministic.
+- Trigger lifecycle behavior remains coherent for triggerable stages (idle/in-progress/success/failure/cancel semantics).
+- New stage IDs must participate cleanly in registry and node-type discovery paths.
+
+**Validation gates before proposing changes:**
+1. `cmake --build build -j`
+2. `ctest --test-dir build --output-on-failure`
+3. `ctest --test-dir build -R MVPArchitectureCheck --output-on-failure`
+
+**Review bar for stage additions:**
+- Do not land a new stage implementation without its stage-family unit tests and required contract/registration coverage.
+- If a contract test is intentionally skipped for a stage capability mismatch, document why in the test body so skip intent is explicit and reviewable.
 
 ## CI/CD & Multi-Platform
 
