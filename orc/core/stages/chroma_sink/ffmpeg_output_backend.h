@@ -102,7 +102,7 @@ private:
     int encoder_bitrate_ = 0;
     bool use_lossless_mode_ = false;
     std::string prores_profile_ = "hq";
-    bool is_tff_ = false;  // True = Top-Field-First (PAL), False = Bottom-Field-First (NTSC)
+    bool is_tff_ = false;  // True when the padded output frame should be marked top-field-first.
     
     // Helper methods
     bool setupEncoder(const std::string& codec_id, const orc::SourceParameters& params);
