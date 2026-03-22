@@ -429,8 +429,9 @@ bool FFmpegOutputBackend::setupEncoder(const std::string& codec_id, const orc::S
     src_width_ = active_width_;
     src_height_ = active_height_;
     
-    // Ensure dimensions are even (required by most video codecs, especially H.264/H.265)
-    // If dimensions are odd, round up to the next even number
+    // Ensure dimensions are even (required by most video codecs, especially H.264/H.265).
+    // Match OutputWriter's vertical padding strategy so field order metadata stays consistent
+    // with the actual raster layout written to the encoder.
     width_ = (src_width_ + 1) & ~1;   // Round up to even
     height_ = (src_height_ + 1) & ~1; // Round up to even
     
@@ -439,7 +440,11 @@ bool FFmpegOutputBackend::setupEncoder(const std::string& codec_id, const orc::S
                      src_width_, src_height_, width_, height_);
     }
     
-    crop_top_ = 0;
+    crop_top_ = (height_ > src_height_ && (src_height_ & 1)) ? 1 : 0;
+
+    // The effective display order depends on where the active raster starts within the padded frame,
+    // not directly on the video system. This mirrors OutputWriter::getStreamHeader().
+    is_tff_ = ((params.first_active_frame_line ^ crop_top_) & 1) == 0;
     
     // Set codec parameters
     codec_ctx_->codec_id = codec->id;
@@ -613,10 +618,6 @@ bool FFmpegOutputBackend::setupEncoder(const std::string& codec_id, const orc::S
             ORC_LOG_DEBUG("FFmpegOutputBackend: Using CRF mode: {}", encoder_crf_);
         }
         
-        // Set field order: NTSC = Bottom-Field-First (BFF), PAL = Top-Field-First (TFF)
-        is_tff_ = (params.system == VideoSystem::PAL || params.system == VideoSystem::PAL_M);
-        codec_ctx_->field_order = is_tff_ ? AV_FIELD_TT : AV_FIELD_BB;
-
         // Add interlaced flag if not deinterlacing
         // TODO: check for apply_deinterlace parameter
         if (codec_id == "libx264") {
@@ -934,16 +935,30 @@ bool FFmpegOutputBackend::convertAndEncode(const ComponentFrame& component_frame
     const int32_t xOffset = video_params_.active_area_cropping_applied ? 0 : 
                            video_params_.active_video_start;
     
+    // Clear top padding, if any.
+    for (int y = 0; y < crop_top_; y++) {
+        uint16_t* dst_y = reinterpret_cast<uint16_t*>(src_frame_->data[0] + y * src_frame_->linesize[0]);
+        uint16_t* dst_u = reinterpret_cast<uint16_t*>(src_frame_->data[1] + y * src_frame_->linesize[1]);
+        uint16_t* dst_v = reinterpret_cast<uint16_t*>(src_frame_->data[2] + y * src_frame_->linesize[2]);
+
+        for (int x = 0; x < width_; x++) {
+            dst_y[x] = static_cast<uint16_t>(Y_ZERO);
+            dst_u[x] = static_cast<uint16_t>(C_ZERO);
+            dst_v[x] = static_cast<uint16_t>(C_ZERO);
+        }
+    }
+
     // Copy active video lines from ComponentFrame
     for (int y = 0; y < src_height_; y++) {
         const int32_t inputLine = inputLineOffset + y;
         const double* src_y = component_frame.y(inputLine) + xOffset;
         const double* src_u = component_frame.u(inputLine) + xOffset;
         const double* src_v = component_frame.v(inputLine) + xOffset;
-        
-        uint16_t* dst_y = reinterpret_cast<uint16_t*>(src_frame_->data[0] + y * src_frame_->linesize[0]);
-        uint16_t* dst_u = reinterpret_cast<uint16_t*>(src_frame_->data[1] + y * src_frame_->linesize[1]);
-        uint16_t* dst_v = reinterpret_cast<uint16_t*>(src_frame_->data[2] + y * src_frame_->linesize[2]);
+
+        const int dst_line = crop_top_ + y;
+        uint16_t* dst_y = reinterpret_cast<uint16_t*>(src_frame_->data[0] + dst_line * src_frame_->linesize[0]);
+        uint16_t* dst_u = reinterpret_cast<uint16_t*>(src_frame_->data[1] + dst_line * src_frame_->linesize[1]);
+        uint16_t* dst_v = reinterpret_cast<uint16_t*>(src_frame_->data[2] + dst_line * src_frame_->linesize[2]);
         
         for (int x = 0; x < src_width_; x++) {
             // Convert Y'UV (IRE scale) to Y'CbCr (limited range) - same as OutputWriter
@@ -960,8 +975,8 @@ bool FFmpegOutputBackend::convertAndEncode(const ComponentFrame& component_frame
         }
     }
     
-    // Fill padding lines if needed
-    for (int y = src_height_; y < height_; y++) {
+    // Fill bottom padding lines, if needed.
+    for (int y = crop_top_ + src_height_; y < height_; y++) {
         uint16_t* dst_y = reinterpret_cast<uint16_t*>(src_frame_->data[0] + y * src_frame_->linesize[0]);
         uint16_t* dst_u = reinterpret_cast<uint16_t*>(src_frame_->data[1] + y * src_frame_->linesize[1]);
         uint16_t* dst_v = reinterpret_cast<uint16_t*>(src_frame_->data[2] + y * src_frame_->linesize[2]);
