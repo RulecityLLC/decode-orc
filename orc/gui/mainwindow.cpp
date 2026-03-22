@@ -407,7 +407,8 @@ void MainWindow::setupMenus()
     connect(new_project_action, &QAction::triggered, this, &MainWindow::onNewProject);
     
     auto* quick_project_action = file_menu->addAction("&Quick Project...");
-    quick_project_action->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Q));
+    // Avoid conflict with Quit on macOS (Command+Q maps to Ctrl in Qt shortcuts).
+    quick_project_action->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Q));
     connect(quick_project_action, &QAction::triggered, this, &MainWindow::onQuickProject);
     
     auto* open_project_action = file_menu->addAction("&Open Project...");
@@ -442,7 +443,7 @@ void MainWindow::setupMenus()
     auto* view_menu = menuBar()->addMenu("&View");
     
     show_preview_action_ = view_menu->addAction("Show &Preview");
-    show_preview_action_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_P));
+    show_preview_action_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_P));
     show_preview_action_->setEnabled(false);
     connect(show_preview_action_, &QAction::triggered, this, [this]() {
         preview_dialog_->show();
