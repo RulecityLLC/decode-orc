@@ -22,10 +22,13 @@
 #include <orc_source_parameters.h>
 #include "previewable_stage.h"
 #include "preview_renderer.h"  // For PreviewImage definition
+#include "stage_preview_capability.h"
+#include "colour_preview_provider.h"
 #include "../triggerable_stage.h"
 
 #include <atomic>
 #include <thread>
+#include <optional>
 
 // Forward declarations for decoder classes
 struct SourceField;
@@ -74,7 +77,9 @@ namespace orc {
 class ChromaSinkStage : public DAGStage, 
                        public ParameterizedStage, 
                        public TriggerableStage, 
-                       public PreviewableStage {
+                       public PreviewableStage,
+                       public IStagePreviewCapability,
+                       public IColourPreviewProvider {
 public:
     ChromaSinkStage();
     ~ChromaSinkStage() override;  // Need custom destructor for unique_ptr with incomplete types
@@ -124,6 +129,14 @@ public:
     std::vector<PreviewOption> get_preview_options() const override;
     PreviewImage render_preview(const std::string& option_id, uint64_t index,
                                PreviewNavigationHint hint = PreviewNavigationHint::Random) const override;
+
+    // IStagePreviewCapability interface
+    StagePreviewCapability get_preview_capability() const override;
+
+    // IColourPreviewProvider interface
+    std::optional<ColourFrameCarrier> get_colour_preview_carrier(
+        uint64_t frame_index,
+        PreviewNavigationHint hint = PreviewNavigationHint::Random) const override;
     
 private:
     mutable std::mutex cached_input_mutex_;  // Protects cached_input_ from race conditions

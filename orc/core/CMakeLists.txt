@@ -30,6 +30,7 @@ add_library(orc-core STATIC
     dag_field_renderer.cpp
     preview_renderer.cpp
     preview_helpers.cpp
+    colour_preview_conversion.cpp
     
     # Observation system
     observation_context.cpp

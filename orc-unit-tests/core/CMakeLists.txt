@@ -89,4 +89,5 @@ orc_add_core_unit_tests(
                 "unit;preview"
 
                 preview_types/preview_types_test.cpp
+                preview_types/preview_carrier_conversion_test.cpp
         )
