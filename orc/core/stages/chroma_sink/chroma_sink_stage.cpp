@@ -1720,17 +1720,31 @@ StagePreviewCapability ChromaSinkStage::get_preview_capability() const
     capability.navigation_extent.granularity = 1;
     capability.navigation_extent.item_label = "frame";
 
-    auto test_carrier = get_colour_preview_carrier(0, PreviewNavigationHint::Random);
-    if (test_carrier.has_value() && test_carrier->is_valid()) {
-        capability.geometry.active_width = test_carrier->width;
-        capability.geometry.active_height = test_carrier->height;
-    } else {
-        capability.geometry.active_width = 1135;
-        capability.geometry.active_height = is_pal ? 625 : 505;
+    // Keep capability geometry aligned with legacy VFR preview sizing so
+    // 4:3 mode remains consistent when switching between signal-domain and
+    // colour-domain preview paths.
+    capability.geometry.active_width = 702;
+    capability.geometry.active_height = 576;
+    if (video_params.active_video_start >= 0 && video_params.active_video_end > video_params.active_video_start) {
+        capability.geometry.active_width =
+            static_cast<uint32_t>(video_params.active_video_end - video_params.active_video_start);
+    }
+    if (video_params.first_active_frame_line >= 0 && video_params.last_active_frame_line > video_params.first_active_frame_line) {
+        capability.geometry.active_height =
+            static_cast<uint32_t>(video_params.last_active_frame_line - video_params.first_active_frame_line);
+    }
+
+    if (capability.geometry.active_height == 0) {
+        capability.geometry.active_height = is_pal ? 576u : 486u;
     }
 
     capability.geometry.display_aspect_ratio = 4.0 / 3.0;
-    capability.geometry.dar_correction_factor = 1.0;
+    
+    // Match DAR correction math used by PreviewHelpers/get_preview_options().
+    double active_ratio = static_cast<double>(capability.geometry.active_width) / 
+                         static_cast<double>(capability.geometry.active_height);
+    double target_ratio = 4.0 / 3.0;
+    capability.geometry.dar_correction_factor = target_ratio / active_ratio;
 
     return capability;
 }

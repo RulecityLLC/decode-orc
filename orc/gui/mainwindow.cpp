@@ -28,7 +28,6 @@
 #include "inspection_dialog.h"
 #include "dropout_editor_dialog.h"
 #include "generic_analysis_dialog.h"
-#include "analysis/vectorscope_dialog.h"  // Safe now - uses pimpl to hide core types
 #include "orcgraphicsview.h"
 #include "render_coordinator.h"
 #include "field_frame_presentation.h"
@@ -348,7 +347,10 @@ void MainWindow::setupUI()
     // positionChanged  — fires on every scrub/click so MainWindow can update labels.
     // renderRequested  — fires when a render should happen (already debounced).
     connect(preview_dialog_, &PreviewDialog::positionChanged,
-            this, [this](int) { updatePreviewInfo(); });
+            this, [this](int) {
+                updatePreviewInfo();
+                preview_dialog_->setSharedPreviewCoordinate(buildCurrentPreviewCoordinate());
+            });
     connect(preview_dialog_, &PreviewDialog::renderRequested,
             this, [this](int) {
                 if (!preview_render_in_flight_) {
@@ -359,7 +361,10 @@ void MainWindow::setupUI()
     connect(preview_dialog_, &PreviewDialog::previewModeChanged,
             this, &MainWindow::onPreviewModeChanged);
     connect(preview_dialog_, &PreviewDialog::signalChanged,
-            this, [this](int) { updatePreview(); });  // Re-render when signal selection changes
+            this, [this](int) {
+            refreshPreviewViewAvailability();
+            updatePreview();
+            });  // Re-render when signal selection changes
     connect(preview_dialog_, &PreviewDialog::aspectRatioModeChanged,
             this, &MainWindow::onAspectRatioModeChanged);
     connect(preview_dialog_, &PreviewDialog::exportPNGRequested,
@@ -385,6 +390,8 @@ void MainWindow::setupUI()
             this, &MainWindow::onSampleMarkerMoved);
     connect(preview_dialog_, &PreviewDialog::fieldTimingRequested,
             this, &MainWindow::onFieldTimingRequested);
+    connect(preview_dialog_, &PreviewDialog::vectorscopeRequested,
+            this, &MainWindow::onPreviewVectorscopeRequested);
     
     // Connect preview frame changed signal to line scope
     // When frame changes, line scope should refresh samples at its current field/line
@@ -540,7 +547,7 @@ void MainWindow::connectDAGSignals()
             this, &MainWindow::runAnalysisForNode);
     connect(dag_scene_, &QtNodes::BasicGraphicsScene::nodeDoubleClicked,
             this, [this](QtNodes::NodeId) {
-                if (!auto_show_preview_action_->isChecked() && !preview_dialog_->isVisible()) {
+                if (!preview_dialog_->isVisible()) {
                     preview_dialog_->show();
                 }
             });
@@ -700,17 +707,10 @@ void MainWindow::closeAllDialogs()
             dialogs_to_close.push_back(pair.second);
         }
     }
-    for (auto& pair : vectorscope_dialogs_) {
-        if (pair.second) {
-            dialogs_to_close.push_back(pair.second);
-        }
-    }
-    
     // Clear maps before closing to prevent destroyed signal handlers from modifying them
     dropout_analysis_dialogs_.clear();
     snr_analysis_dialogs_.clear();
     burst_level_analysis_dialogs_.clear();
-    vectorscope_dialogs_.clear();
     
     // Now safe to close all dialogs
     for (auto* dialog : dialogs_to_close) {
@@ -1479,6 +1479,7 @@ void MainWindow::onPreviewModeChanged(int index)
     
     // Update viewer controls (slider range, step, labels) without triggering a render yet
     refreshViewerControls(true /* skip_preview */);
+    refreshPreviewViewAvailability();
     
     // Set the calculated position (after refreshViewerControls updates the range)
     if (new_position >= 0 && new_position <= static_cast<uint64_t>(preview_dialog_->previewSlider()->maximum())) {
@@ -1501,44 +1502,14 @@ void MainWindow::onAspectRatioModeChanged(int index)
 
     current_aspect_ratio_mode_ = available_modes[index].mode;
 
-    // Determine correction factor: for 1:1 use 1.0; for 4:3 compute from active area
+    // Determine correction factor from the selected output metadata.
+    // This keeps all GUI paths consistent with core-provided DAR correction.
     auto computeAspectCorrection = [this]() -> double {
         double correction = 1.0;
-        // Fetch hints (active lines) and video parameters for current node
-        auto hints = hints_presenter_->getHintsForField(current_view_node_id_, orc::FieldID(0));
-        if (hints.video_params.has_value() && hints.active_line.has_value() && hints.active_line->is_valid()) {
-            const auto& vp = hints.video_params.value();
-            const auto& al = hints.active_line.value();
-            int active_width = vp.active_video_end - vp.active_video_start;
-            int active_frame_height = al.last_active_frame_line - al.first_active_frame_line + 1;
-            if (active_width > 0 && active_frame_height > 0) {
-                double target_ratio = 1.0;
-                switch (current_output_type_) {
-                    case orc::PreviewOutputType::Field:
-                    case orc::PreviewOutputType::Luma:
-                        // Single field desired ratio ~ 4:1.5
-                        target_ratio = 4.0 / 1.5;  // ~2.6667
-                        // Field shows half the frame height
-                        correction = (target_ratio * (active_frame_height / 2.0)) / static_cast<double>(active_width);
-                        break;
-                    case orc::PreviewOutputType::Frame:
-                    case orc::PreviewOutputType::Frame_Reversed:
-                    case orc::PreviewOutputType::Split:
-                        target_ratio = 4.0 / 3.0;  // ~1.3333
-                        correction = (target_ratio * static_cast<double>(active_frame_height)) / static_cast<double>(active_width);
-                        break;
-                    default:
-                        correction = 1.0;
-                        break;
-                }
-            }
-        } else {
-            // Fallback: use stage-provided DAR correction if available
-            for (const auto& output : available_outputs_) {
-                if (output.type == current_output_type_ && output.option_id == current_option_id_) {
-                    correction = output.dar_aspect_correction;
-                    break;
-                }
+        for (const auto& output : available_outputs_) {
+            if (output.type == current_output_type_ && output.option_id == current_option_id_) {
+                correction = output.dar_aspect_correction;
+                break;
             }
         }
         return correction;
@@ -2277,33 +2248,101 @@ void MainWindow::updatePreview()
     pending_render_index_ = current_index;
 }
 
-void MainWindow::updateVectorscope(const orc::PreviewRenderResult& result)
+orc::VideoDataType MainWindow::inferCurrentVideoDataType() const
 {
-    auto it = vectorscope_dialogs_.find(result.node_id);
-    if (it == vectorscope_dialogs_.end()) {
-        ORC_LOG_DEBUG("updateVectorscope: no dialog for node '{}'", result.node_id.to_string());
+    const bool is_pal = project_.presenter()
+        && project_.presenter()->getVideoFormat() == orc::presenters::VideoFormat::PAL;
+
+    if (current_output_type_ == orc::PreviewOutputType::Frame
+        || current_output_type_ == orc::PreviewOutputType::Frame_Reversed
+        || current_output_type_ == orc::PreviewOutputType::Split) {
+        return is_pal ? orc::VideoDataType::ColourPAL : orc::VideoDataType::ColourNTSC;
+    }
+
+    if (preview_dialog_ && preview_dialog_->signalCombo() && preview_dialog_->signalCombo()->isVisible()) {
+        return is_pal ? orc::VideoDataType::YC_PAL : orc::VideoDataType::YC_NTSC;
+    }
+
+    return is_pal ? orc::VideoDataType::CompositePAL : orc::VideoDataType::CompositeNTSC;
+}
+
+orc::PreviewCoordinate MainWindow::buildCurrentPreviewCoordinate() const
+{
+    orc::PreviewCoordinate coordinate;
+    coordinate.field_index = preview_dialog_ ? static_cast<uint64_t>(preview_dialog_->currentIndex()) : 0;
+    coordinate.line_index = (last_line_scope_line_number_ >= 0)
+        ? static_cast<uint32_t>(last_line_scope_line_number_)
+        : 0U;
+    coordinate.sample_offset = (last_line_scope_image_x_ >= 0)
+        ? static_cast<uint32_t>(last_line_scope_image_x_)
+        : 0U;
+    coordinate.data_type_context = inferCurrentVideoDataType();
+    return coordinate;
+}
+
+void MainWindow::refreshPreviewViewAvailability()
+{
+    if (!preview_dialog_ || !render_coordinator_ || !current_view_node_id_.is_valid()) {
         return;
     }
-    auto* dialog = it->second;
-    if (!dialog) {
-        ORC_LOG_DEBUG("updateVectorscope: dialog pointer null for node '{}'", result.node_id.to_string());
+
+    const auto views = render_coordinator_->getAvailablePreviewViews(
+        current_view_node_id_,
+        inferCurrentVideoDataType());
+    preview_dialog_->setAvailablePreviewViews(views);
+}
+
+void MainWindow::refreshVectorscopeForCurrentCoordinate()
+{
+    if (!preview_dialog_ || !render_coordinator_ || !current_view_node_id_.is_valid()) {
         return;
     }
-    if (!dialog->isVisible()) {
-        ORC_LOG_DEBUG("updateVectorscope: dialog hidden for node '{}' — skipping", result.node_id.to_string());
+
+    // Keep vectorscope requests off the presenter while preview rendering is active.
+    // This avoids UI-thread synchronous vectorscope calls racing the worker render path.
+    if (preview_render_in_flight_) {
         return;
     }
-    
-    // Update vectorscope if data is available
-    if (result.vectorscope_data) {
-        const size_t sample_count = result.vectorscope_data->samples.size();
-        ORC_LOG_DEBUG("updateVectorscope: delivering {} samples to dialog for node '{}' (output_type={}, index={})",
-                      sample_count, result.node_id.to_string(), static_cast<int>(result.output_type), result.output_index);
-        dialog->updateVectorscope(*result.vectorscope_data);
-    } else {
-        ORC_LOG_DEBUG("updateVectorscope: no vectorscope data for node '{}' (output_type={}, index={})",
-                      result.node_id.to_string(), static_cast<int>(result.output_type), result.output_index);
+
+    if (!preview_dialog_->isVectorscopeVisibleForNode(current_view_node_id_)) {
+        return;
     }
+
+    orc::PreviewCoordinate coordinate = preview_dialog_->sharedPreviewCoordinate().has_value()
+        ? *preview_dialog_->sharedPreviewCoordinate()
+        : buildCurrentPreviewCoordinate();
+
+    coordinate.data_type_context = inferCurrentVideoDataType();
+    if (!coordinate.is_valid()) {
+        return;
+    }
+
+    const auto result = render_coordinator_->requestPreviewViewData(
+        current_view_node_id_,
+        "preview.vectorscope",
+        coordinate.data_type_context,
+        coordinate);
+
+    if (!result.success || result.payload_kind != orc::PreviewViewPayloadKind::Vectorscope) {
+        preview_dialog_->updateVectorscope(current_view_node_id_, std::nullopt);
+        ORC_LOG_DEBUG("refreshVectorscopeForCurrentCoordinate: {}",
+                      result.error_message.empty() ? "no vectorscope payload" : result.error_message);
+        return;
+    }
+
+    preview_dialog_->updateVectorscope(current_view_node_id_, result.vectorscope);
+}
+
+void MainWindow::onPreviewVectorscopeRequested(const orc::PreviewCoordinate& coordinate)
+{
+    if (!current_view_node_id_.is_valid()) {
+        return;
+    }
+
+    orc::PreviewCoordinate updated = coordinate;
+    updated.data_type_context = inferCurrentVideoDataType();
+    preview_dialog_->setSharedPreviewCoordinate(updated);
+    refreshVectorscopeForCurrentCoordinate();
 }
 
 void MainWindow::updatePreviewModeCombo()
@@ -2874,46 +2913,14 @@ void MainWindow::runAnalysisForNode(const orc::AnalysisToolInfo& tool_info, cons
 
     // Special-case: Vectorscope is a live visualization dialog, not a batch analysis
     if (tool_info.id == "vectorscope") {
-        // Note: Vectorscope data comes from preview images (thread-safe),
-        // so we don't need to access the DAG or stage here.
-        
-        // Reuse existing dialog for this node if present; else create new
-        VectorscopeDialog* dialog = nullptr;
-        auto dit = vectorscope_dialogs_.find(node_id);
-        if (dit != vectorscope_dialogs_.end()) {
-            dialog = dit->second;
-        } else {
-            dialog = new VectorscopeDialog(this);
-            dialog->setAttribute(Qt::WA_DeleteOnClose, true);
-            dialog->setStage(node_id);
-            // Remove from map when closed/destroyed
-            connect(dialog, &VectorscopeDialog::closed, [this, node_id]() {
-                auto it2 = vectorscope_dialogs_.find(node_id);
-                if (it2 != vectorscope_dialogs_.end()) {
-                    vectorscope_dialogs_.erase(it2);
-                }
-            });
-            connect(dialog, &QObject::destroyed, [this, node_id]() {
-                auto it2 = vectorscope_dialogs_.find(node_id);
-                if (it2 != vectorscope_dialogs_.end()) {
-                    vectorscope_dialogs_.erase(it2);
-                }
-            });
-            vectorscope_dialogs_[node_id] = dialog;
-        }
-
-        // Show the dialog
-        dialog->show();
-        dialog->raise();
-        dialog->activateWindow();
-
-        // Trigger an immediate update to populate the vectorscope
-        // If not currently previewing this node, switch to it
+        // Ensure preview selection matches the requested node.
         if (current_view_node_id_ != node_id) {
             onNodeSelectedForView(node_id);
-        } else {
-            updatePreview();
         }
+
+        preview_dialog_->setCurrentNodeId(node_id);
+        preview_dialog_->showVectorscopeForNode(node_id);
+        refreshVectorscopeForCurrentCoordinate();
         return;
     }
     
@@ -3702,7 +3709,7 @@ void MainWindow::updateQualityMetricsDialog()
     }
 }
 
-// Removed Vectorscope dialog launcher from Preview; vectorscope opens from node context menu
+// Vectorscope is preview-owned and refreshed through the registry request contract.
 
 void MainWindow::updateAllPreviewComponents()
 {
@@ -3981,6 +3988,13 @@ void MainWindow::onLineScopeRequested(int image_x, int image_y)
     // Convert to 1-based for display and helper functions (1 to field_height)
     int field_line_0based = mapping.field_line;
     int field_line_1based = field_line_0based + 1;
+
+    orc::PreviewCoordinate coordinate;
+    coordinate.field_index = field_index;
+    coordinate.line_index = static_cast<uint32_t>(std::max(field_line_0based, 0));
+    coordinate.sample_offset = static_cast<uint32_t>(std::max(image_x, 0));
+    coordinate.data_type_context = inferCurrentVideoDataType();
+    preview_dialog_->setSharedPreviewCoordinate(coordinate);
     
     // Map image_x from preview image coordinates to field sample coordinates
     // The preview widget gives us coordinates in the rendered RGB image space,
@@ -4092,6 +4106,13 @@ void MainWindow::onLineSamplesReady(uint64_t request_id, uint64_t field_index, i
     // Store field/line for later navigation (already stored above)
     // last_line_scope_field_index_ = field_index;
     // last_line_scope_line_number_ = line_number_0based;
+
+    orc::PreviewCoordinate coordinate;
+    coordinate.field_index = field_index;
+    coordinate.line_index = static_cast<uint32_t>(std::max(line_number_0based, 0));
+    coordinate.sample_offset = static_cast<uint32_t>(std::max(sample_index, 0));
+    coordinate.data_type_context = inferCurrentVideoDataType();
+    preview_dialog_->setSharedPreviewCoordinate(coordinate);
     
     // Show the line scope dialog with the samples, including the current node_id
     // Pass 1-based line number for display
@@ -4116,6 +4137,8 @@ void MainWindow::onLineSamplesReady(uint64_t request_id, uint64_t field_index, i
         ORC_LOG_DEBUG("Refreshing field timing dialog to update marker position");
         onFieldTimingRequested();
     }
+
+    refreshVectorscopeForCurrentCoordinate();
 }
 
 void MainWindow::onFrameLineNavigationReady(uint64_t request_id, orc::FrameLineNavigationResult result)

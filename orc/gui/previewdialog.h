@@ -24,11 +24,17 @@
 #include <vector>
 #include <cstdint>
 #include <optional>
+#include <unordered_map>
+#include <node_id.h>
+#include <orc_preview_types.h>
+#include <orc_preview_views.h>
+#include <orc_vectorscope.h>
 #include "presenters/include/hints_view_models.h"  // For VideoParametersView
 
 class FieldPreviewWidget;
 class LineScopeDialog;
 class FieldTimingDialog;
+class VectorscopeDialog;
 
 /**
  * @brief Separate dialog window for previewing field/frame outputs from DAG nodes
@@ -78,6 +84,41 @@ public:
      * @param node_id Node identifier string
      */
     void setCurrentNode(const QString& node_label, const QString& node_id);
+
+    /**
+     * @brief Set the current node used by preview-owned supplementary views.
+     */
+    void setCurrentNodeId(orc::NodeID node_id);
+
+    /**
+     * @brief Update view launcher availability using presenter/registry descriptors.
+     */
+    void setAvailablePreviewViews(const std::vector<orc::PreviewViewDescriptor>& views);
+
+    /**
+     * @brief Set and broadcast the shared preview coordinate for supplementary tools.
+     */
+    void setSharedPreviewCoordinate(const orc::PreviewCoordinate& coordinate);
+
+    /**
+     * @brief Read the currently shared coordinate used by supplementary tools.
+     */
+    const std::optional<orc::PreviewCoordinate>& sharedPreviewCoordinate() const { return shared_preview_coordinate_; }
+
+    /**
+     * @brief Show vectorscope dialog owned by the preview subsystem.
+     */
+    void showVectorscopeForNode(orc::NodeID node_id);
+
+    /**
+     * @brief Update vectorscope dialog content for the given node.
+     */
+    void updateVectorscope(orc::NodeID node_id, const std::optional<orc::VectorscopeData>& data);
+
+    /**
+     * @brief Check if vectorscope is visible for node.
+     */
+    bool isVectorscopeVisibleForNode(orc::NodeID node_id) const;
     
     /**
      * @brief Show line scope dialog with sample data
@@ -182,9 +223,12 @@ Q_SIGNALS:
     void sampleMarkerMovedInLineScope(int sample_x);  // Emitted when sample marker moves in line scope
     void previewFrameChanged();  // Emitted when preview frame/output type changes - tells line scope to refresh at current position
     void fieldTimingRequested();  // Emitted when user requests field timing view
+    void vectorscopeRequested(const orc::PreviewCoordinate& coordinate);  // Emitted when vectorscope should refresh via presenter contract
+    void previewCoordinateChanged(const orc::PreviewCoordinate& coordinate);  // Emitted whenever shared coordinate changes
 
 private slots:
     void onSampleMarkerMoved(int sample_x);
+    void onVectorscopeActionTriggered();
 
 private:
     void setupUI();
@@ -207,8 +251,13 @@ private:
     QAction* show_quality_metrics_action_;
     QAction* show_ntsc_observer_action_;
     QAction* show_field_timing_action_;
+    QAction* show_vectorscope_action_;
     LineScopeDialog* line_scope_dialog_;
     FieldTimingDialog* field_timing_dialog_;
+    std::unordered_map<orc::NodeID, VectorscopeDialog*> vectorscope_dialogs_;
+    orc::NodeID current_node_id_;
+    std::optional<orc::PreviewCoordinate> shared_preview_coordinate_;
+    bool vectorscope_available_{false};
     
     // Current line scope context for cross-hair updates
     int current_line_scope_line_ = -1;  // Image Y coordinate of current line being scoped
@@ -224,6 +273,11 @@ private:
     QPushButton* zoom1to1_button_;
     QPushButton* dropouts_button_;
     QSpinBox* frame_jump_spinbox_;
+
+    void closeVectorscopeDialogs();
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
 };
 
 #endif // PREVIEWDIALOG_H

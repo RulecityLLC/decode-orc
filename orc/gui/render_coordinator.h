@@ -26,6 +26,7 @@
 #include <field_id.h>
 #include <node_id.h>
 #include <common_types.h>
+#include <orc_preview_views.h>
 #include <orc_rendering.h>  // Public API rendering types (includes mapping result types)
 #include <orc_source_parameters.h>  // Public API VideoParameters
 #include "vbi_view_models.h"
@@ -609,6 +610,22 @@ public:
      * @return Result with first_field and second_field indices
      */
     orc::FrameFieldsResult getFrameFields(const orc::NodeID& node_id, uint64_t frame_index);
+
+    /**
+     * @brief Get registry-driven preview views for node/data type (synchronous).
+     */
+    std::vector<orc::PreviewViewDescriptor> getAvailablePreviewViews(
+        const orc::NodeID& node_id,
+        orc::VideoDataType data_type);
+
+    /**
+     * @brief Request preview-view data through presenter registry contract (synchronous).
+     */
+    orc::PreviewViewDataResult requestPreviewViewData(
+        const orc::NodeID& node_id,
+        const std::string& view_id,
+        orc::VideoDataType data_type,
+        const orc::PreviewCoordinate& coordinate);
     
     uint64_t requestSavePNG(const orc::NodeID& node_id, 
                            orc::PreviewOutputType output_type,

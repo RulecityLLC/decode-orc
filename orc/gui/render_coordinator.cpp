@@ -248,6 +248,30 @@ orc::FrameFieldsResult RenderCoordinator::getFrameFields(const orc::NodeID& node
     return orc::FrameFieldsResult{result.is_valid, result.first_field, result.second_field};
 }
 
+std::vector<orc::PreviewViewDescriptor> RenderCoordinator::getAvailablePreviewViews(
+    const orc::NodeID& node_id,
+    orc::VideoDataType data_type)
+{
+    std::lock_guard<std::mutex> lock(queue_mutex_);
+    if (!worker_render_presenter_) {
+        return {};
+    }
+    return worker_render_presenter_->getAvailablePreviewViews(node_id, data_type);
+}
+
+orc::PreviewViewDataResult RenderCoordinator::requestPreviewViewData(
+    const orc::NodeID& node_id,
+    const std::string& view_id,
+    orc::VideoDataType data_type,
+    const orc::PreviewCoordinate& coordinate)
+{
+    std::lock_guard<std::mutex> lock(queue_mutex_);
+    if (!worker_render_presenter_) {
+        return {false, "Render presenter not initialized", orc::PreviewViewPayloadKind::None, std::nullopt, std::nullopt};
+    }
+    return worker_render_presenter_->requestPreviewViewData(node_id, view_id, data_type, coordinate);
+}
+
 uint64_t RenderCoordinator::requestTrigger(const orc::NodeID& node_id)
 {
     uint64_t id = nextRequestId();

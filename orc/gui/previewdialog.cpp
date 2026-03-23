@@ -11,6 +11,7 @@
 #include "fieldpreviewwidget.h"
 #include "linescopedialog.h"
 #include "fieldtimingdialog.h"
+#include "analysis/vectorscope_dialog.h"
 #include "logging.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -126,6 +127,12 @@ void PreviewDialog::setupUI()
     show_field_timing_action_ = viewMenu->addAction("&Field Timing");
     show_field_timing_action_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_T));
     connect(show_field_timing_action_, &QAction::triggered, this, &PreviewDialog::fieldTimingRequested);
+
+    show_vectorscope_action_ = viewMenu->addAction("&Vectorscope");
+    show_vectorscope_action_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S));
+    show_vectorscope_action_->setVisible(false);
+    show_vectorscope_action_->setEnabled(false);
+    connect(show_vectorscope_action_, &QAction::triggered, this, &PreviewDialog::onVectorscopeActionTriggered);
     
     mainLayout->setMenuBar(menu_bar_);
     
@@ -358,7 +365,102 @@ void PreviewDialog::setupUI()
 
 void PreviewDialog::setCurrentNode(const QString& node_label, const QString& node_id)
 {
+    Q_UNUSED(node_label);
     status_bar_->showMessage(QString("Viewing output from stage: %1").arg(node_id));
+}
+
+void PreviewDialog::setCurrentNodeId(orc::NodeID node_id)
+{
+    current_node_id_ = node_id;
+}
+
+void PreviewDialog::setAvailablePreviewViews(const std::vector<orc::PreviewViewDescriptor>& views)
+{
+    vectorscope_available_ = false;
+    for (const auto& view : views) {
+        if (view.id == "preview.vectorscope") {
+            vectorscope_available_ = true;
+            break;
+        }
+    }
+
+    if (show_vectorscope_action_) {
+        show_vectorscope_action_->setVisible(vectorscope_available_);
+        show_vectorscope_action_->setEnabled(vectorscope_available_);
+    }
+
+    if (!vectorscope_available_) {
+        closeVectorscopeDialogs();
+    }
+}
+
+void PreviewDialog::setSharedPreviewCoordinate(const orc::PreviewCoordinate& coordinate)
+{
+    if (!coordinate.is_valid()) {
+        return;
+    }
+
+    shared_preview_coordinate_ = coordinate;
+    emit previewCoordinateChanged(coordinate);
+}
+
+void PreviewDialog::showVectorscopeForNode(orc::NodeID node_id)
+{
+    if (!node_id.is_valid()) {
+        return;
+    }
+
+    VectorscopeDialog* dialog = nullptr;
+    auto it = vectorscope_dialogs_.find(node_id);
+    if (it != vectorscope_dialogs_.end()) {
+        dialog = it->second;
+    } else {
+        dialog = new VectorscopeDialog(this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose, true);
+        dialog->setStage(node_id);
+        connect(dialog, &VectorscopeDialog::closed, [this, node_id]() {
+            auto it2 = vectorscope_dialogs_.find(node_id);
+            if (it2 != vectorscope_dialogs_.end()) {
+                vectorscope_dialogs_.erase(it2);
+            }
+        });
+        connect(dialog, &QObject::destroyed, [this, node_id]() {
+            auto it2 = vectorscope_dialogs_.find(node_id);
+            if (it2 != vectorscope_dialogs_.end()) {
+                vectorscope_dialogs_.erase(it2);
+            }
+        });
+        vectorscope_dialogs_[node_id] = dialog;
+    }
+
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
+}
+
+void PreviewDialog::updateVectorscope(orc::NodeID node_id, const std::optional<orc::VectorscopeData>& data)
+{
+    auto it = vectorscope_dialogs_.find(node_id);
+    if (it == vectorscope_dialogs_.end()) {
+        return;
+    }
+
+    auto* dialog = it->second;
+    if (!dialog || !dialog->isVisible()) {
+        return;
+    }
+
+    if (data.has_value()) {
+        dialog->updateVectorscope(*data);
+    } else {
+        dialog->clearDisplay();
+    }
+}
+
+bool PreviewDialog::isVectorscopeVisibleForNode(orc::NodeID node_id) const
+{
+    auto it = vectorscope_dialogs_.find(node_id);
+    return it != vectorscope_dialogs_.end() && it->second && it->second->isVisible();
 }
 
 void PreviewDialog::onSampleMarkerMoved(int sample_x)
@@ -367,6 +469,12 @@ void PreviewDialog::onSampleMarkerMoved(int sample_x)
     // MainWindow has the context to map sample_x properly
     emit sampleMarkerMovedInLineScope(sample_x);
 }
+void PreviewDialog::closeEvent(QCloseEvent* event)
+{
+    closeChildDialogs();
+    QDialog::closeEvent(event);
+}
+
 void PreviewDialog::closeChildDialogs()
 {
     // Close line scope dialog if open
@@ -378,10 +486,27 @@ void PreviewDialog::closeChildDialogs()
     if (field_timing_dialog_ && field_timing_dialog_->isVisible()) {
         field_timing_dialog_->close();
     }
+
+    closeVectorscopeDialogs();
     
     // Disable cross-hairs when closing
     if (preview_widget_) {
         preview_widget_->setCrosshairsEnabled(false);
+    }
+}
+
+void PreviewDialog::closeVectorscopeDialogs()
+{
+    std::vector<QWidget*> dialogs_to_close;
+    dialogs_to_close.reserve(vectorscope_dialogs_.size());
+    for (auto& pair : vectorscope_dialogs_) {
+        if (pair.second) {
+            dialogs_to_close.push_back(pair.second);
+        }
+    }
+    vectorscope_dialogs_.clear();
+    for (auto* dialog : dialogs_to_close) {
+        dialog->close();
     }
 }
 
@@ -489,4 +614,24 @@ void PreviewDialog::showLineScope(const QString& node_id, int stage_index, uint6
 void PreviewDialog::notifyFrameChanged()
 {
     emit previewFrameChanged();
+}
+
+void PreviewDialog::onVectorscopeActionTriggered()
+{
+    if (!vectorscope_available_ || !current_node_id_.is_valid()) {
+        return;
+    }
+
+    showVectorscopeForNode(current_node_id_);
+
+    orc::PreviewCoordinate coordinate;
+    if (shared_preview_coordinate_.has_value() && shared_preview_coordinate_->is_valid()) {
+        coordinate = *shared_preview_coordinate_;
+    } else {
+        coordinate.field_index = static_cast<uint64_t>(currentIndex());
+        coordinate.line_index = 0;
+        coordinate.sample_offset = 0;
+    }
+
+    emit vectorscopeRequested(coordinate);
 }

@@ -22,6 +22,7 @@
 #include "guiproject.h"
 #include <orc_rendering.h>  // Public API rendering types
 #include <orc_analysis.h>   // For AnalysisToolInfo
+#include <orc_preview_types.h>
 #include "orcgraphmodel.h"
 #include "orcgraphicsscene.h"
 #include "render_coordinator.h"
@@ -40,7 +41,6 @@ class DropoutAnalysisDialog;
 class SNRAnalysisDialog;
 class BurstLevelAnalysisDialog;
 class QualityMetricsDialog;
-class VectorscopeDialog;
 class RenderCoordinator;
 
 namespace orc {
@@ -134,6 +134,7 @@ private slots:
     void onFieldTimingRequested();
     void onSetCrosshairsFromFieldTiming();
     void onLineScopeDialogClosed();
+    void onPreviewVectorscopeRequested(const orc::PreviewCoordinate& coordinate);
     
     // Coordinator response slots
     void onPreviewReady(uint64_t request_id, orc::PreviewRenderResult result);
@@ -178,7 +179,6 @@ private:
     void updateAspectRatioCombo();  // Populate aspect ratio combo from core
     void refreshViewerControls(bool skip_preview = false);  // Update slider, combo, preview, and info for current node
     void updateAllPreviewComponents();  // Update preview image, info label, VBI dialog, and vectorscope(s)
-    void updateVectorscope(const orc::PreviewRenderResult& result);
     void loadProjectDAG();  // Load DAG into embedded viewer
     void positionViewToTopLeft();  // Position view to show top-left node
     void selectLowestSourceStage();  // Auto-select source stage with lowest node ID
@@ -193,6 +193,10 @@ private:
     
     // Line scope helpers
     void requestLineSamplesForNavigation(uint64_t field_index, int line_number, int sample_x, int preview_image_width);
+    orc::VideoDataType inferCurrentVideoDataType() const;
+    void refreshPreviewViewAvailability();
+    orc::PreviewCoordinate buildCurrentPreviewCoordinate() const;
+    void refreshVectorscopeForCurrentCoordinate();
     
     // Settings helpers
     QString getLastProjectDirectory() const;
@@ -248,7 +252,6 @@ private:
     std::unordered_map<orc::NodeID, DropoutAnalysisDialog*> dropout_analysis_dialogs_;
     std::unordered_map<orc::NodeID, SNRAnalysisDialog*> snr_analysis_dialogs_;
     std::unordered_map<orc::NodeID, BurstLevelAnalysisDialog*> burst_level_analysis_dialogs_;
-    std::unordered_map<orc::NodeID, VectorscopeDialog*> vectorscope_dialogs_;
     OrcGraphModel* dag_model_;
     OrcGraphicsView* dag_view_;
     OrcGraphicsScene* dag_scene_;
