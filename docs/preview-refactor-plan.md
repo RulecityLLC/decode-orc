@@ -47,7 +47,9 @@ The Colour NTSC and Colour PAL data types must carry these three parameters as p
 
 1. **Preview display conversion.** The rendering path must convert from the declared colorimetry to the display output colorimetry. The safe cross-platform target is BT.709 primaries with sRGB transfer curve, which maps cleanly onto the compositors on macOS (Quartz), Wayland, and Windows. This conversion belongs in the base rendering infrastructure, not in individual stage implementations.
 
-2. **FFmpeg export metadata.** When exporting via FFmpeg, the declared matrix coefficients, primaries, and transfer characteristics should be written as stream metadata tags rather than silently defaulted. An additional option — to perform a full colorimetric conversion to a modern output standard rather than merely tagging — should also be available.
+2. **Handoff metadata to FFmpeg-facing stages.** The declared matrix coefficients, primaries, and transfer characteristics must be part of the chroma-decoder output contract passed to downstream sinks (including FFmpeg-facing sinks), rather than silently defaulted. The focus here is the correctness of the handoff contract from decoder/preview core to sink stages.
+
+The detailed behavior of FFmpeg output generation (container/codec-specific tagging and conversion policy at mux/encode time) is intentionally out of scope for this refactor and belongs to sink-stage/export follow-up work.
 
 This work corresponds to [issue #140](https://github.com/simoninns/decode-orc/issues/140). It is in scope for this refactor because the taxonomy and stage capability contract are the right structural home for colorimetric metadata; introducing them now avoids a later retrofit. Any changes to the chroma decode math inside `ld-chroma-decoder` itself are out of scope and a separate upstream concern.
 
@@ -203,7 +205,7 @@ When this refactor is complete, the following should be true:
 
 7. **No code duplication** across view implementations for common concerns: coordinate handling, export formatting, aspect-ratio correction, IRE scale markers, and data-type routing.
 
-8. **Colorimetric metadata is first-class** (issue #140). The Colour NTSC/PAL types carry matrix coefficients, primaries, and transfer characteristics. The preview display path converts from declared colorimetry to sRGB/BT.709 for the host compositor. FFmpeg export writes the declared colorimetry as stream metadata, with an opt-in full conversion path.
+8. **Colorimetric metadata is first-class** (issue #140). The Colour NTSC/PAL types carry matrix coefficients, primaries, and transfer characteristics. The preview display path converts from declared colorimetry to sRGB/BT.709 for the host compositor. Downstream sink handoff carries the same declared colorimetry explicitly.
 
 9. **Live parameter tweaking works from inside the preview window.** For stages that declare preview-tweakable parameters, a collapsible control panel appears in `PreviewDialog`. Display-phase parameters (colorimetric metadata) update the preview without re-decoding. Decode-phase parameters (chroma gain, phase, NR, decoder type, etc.) trigger a single-field re-decode via a lightweight `ApplyStageParameters` path, not a full encode-to-file re-trigger.
 
@@ -220,6 +222,7 @@ When this refactor is complete, the following should be true:
 - **The registration pattern mirrors the existing `StageRegistry`** design so the codebase remains conceptually uniform.
 - **Chroma decode math is not touched.** Colorimetric parameters (issue #140) are declared and propagated by the preview/export infrastructure; any changes to the underlying `ld-chroma-decoder` decode algorithm are a separate upstream concern.
 - **Unit boundaries are strict.** mV/IRE applies to signal-domain waveform data only; YUV/RGB data remains in colour-space values and boundary-defined code values (8/10/16-bit as required by output format), and is never treated as mV.
+- **FFmpeg output behavior is out of scope here.** This document covers decoder-domain data, preview behavior, and stage-to-sink handoff contracts. Container/codec-specific FFmpeg encode and mux behavior is follow-up work.
 
 ---
 
