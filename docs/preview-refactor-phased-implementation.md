@@ -283,6 +283,7 @@ Remove legacy preview architecture remnants, complete migration across stages, a
 - Migrate remaining stages to capability declarations and carrier-backed preview path.
 - Retire legacy `PreviewOutputType` coupling and old hardcoded view wiring.
 - Remove superseded `render_preview()` usage from stages.
+- Make sure all new code is adequately commented both in orc-core and orc-gui
 - Finalize architecture docs and contributor guidance.
 - Add follow-up issue links for intentionally deferred FFmpeg tagging policy work.
 

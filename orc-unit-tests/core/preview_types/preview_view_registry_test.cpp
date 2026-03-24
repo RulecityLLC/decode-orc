@@ -12,6 +12,7 @@
 #include <memory>
 
 #include "../../../orc/core/include/preview_view_registry.h"
+#include "../../../orc/core/include/colour_preview_provider.h"
 #include "../../../orc/core/stages/stage.h"
 
 namespace orc_unit_test {
@@ -80,6 +81,91 @@ public:
 
 private:
     std::vector<orc::VideoDataType> supported_types_;
+};
+
+class TestColourPreviewStage final
+    : public orc::DAGStage
+    , public orc::IStagePreviewCapability
+    , public orc::IColourPreviewProvider {
+public:
+    std::string version() const override
+    {
+        return "1.0.0";
+    }
+
+    orc::NodeTypeInfo get_node_type_info() const override
+    {
+        return {
+            orc::NodeType::SINK,
+            "test_colour_preview_stage",
+            "Test Colour Preview Stage",
+            "Unit-test colour preview capability stage",
+            1,
+            1,
+            1,
+            1,
+            orc::VideoFormatCompatibility::ALL,
+            orc::SinkCategory::CORE,
+        };
+    }
+
+    std::vector<orc::ArtifactPtr> execute(
+        const std::vector<orc::ArtifactPtr>&,
+        const std::map<std::string, orc::ParameterValue>&,
+        orc::ObservationContext&) override
+    {
+        return {};
+    }
+
+    size_t required_input_count() const override
+    {
+        return 1;
+    }
+
+    size_t output_count() const override
+    {
+        return 1;
+    }
+
+    orc::StagePreviewCapability get_preview_capability() const override
+    {
+        orc::StagePreviewCapability capability{};
+        capability.supported_data_types = {orc::VideoDataType::ColourNTSC};
+        capability.navigation_extent.item_count = 4;
+        capability.navigation_extent.granularity = 1;
+        capability.navigation_extent.item_label = "frame";
+        capability.geometry.active_width = 2;
+        capability.geometry.active_height = 2;
+        capability.geometry.display_aspect_ratio = 4.0 / 3.0;
+        capability.geometry.dar_correction_factor = 1.0;
+        return capability;
+    }
+
+    std::optional<orc::ColourFrameCarrier> get_colour_preview_carrier(
+        uint64_t frame_index,
+        orc::PreviewNavigationHint) const override
+    {
+        orc::ColourFrameCarrier carrier{};
+        carrier.data_type = orc::VideoDataType::ColourNTSC;
+        carrier.colorimetry = orc::ColorimetricMetadata::default_ntsc();
+        carrier.frame_index = frame_index;
+        carrier.width = 2;
+        carrier.height = 2;
+        carrier.y_plane = {0.25, 0.5, 0.75, 1.0};
+        carrier.u_plane = {0.0, 0.1, -0.1, 0.0};
+        carrier.v_plane = {0.0, -0.1, 0.1, 0.0};
+        carrier.white_16b_ire = 65535.0;
+        carrier.black_16b_ire = 0.0;
+
+        orc::VectorscopeData vectorscope{};
+        vectorscope.width = 2;
+        vectorscope.height = 2;
+        vectorscope.field_number = frame_index;
+        vectorscope.samples.emplace_back(12.0, -8.0, 0);
+        carrier.vectorscope_data = vectorscope;
+
+        return carrier;
+    }
 };
 
 struct TestViewState {
@@ -304,6 +390,38 @@ TEST(PreviewViewRegistryTest, exportErrorPropagates)
 
     EXPECT_FALSE(export_result.success);
     EXPECT_EQ(export_result.error_message, "export failed");
+}
+
+TEST(PreviewViewRegistryTest, vectorscopeRequestDoesNotDependOnImageRenderSideChannel)
+{
+    orc::PreviewViewRegistry registry;
+
+    auto stage = std::make_shared<TestColourPreviewStage>();
+    auto dag = std::make_shared<orc::DAG>(build_test_dag_with_stage(stage));
+
+    // Register default views with no preview renderer instance; vectorscope view
+    // should still work because it reads directly from colour carriers.
+    orc::PreviewViewRegistry::register_default_views(registry, dag, nullptr);
+
+    orc::PreviewCoordinate coordinate{};
+    coordinate.field_index = 2;
+    coordinate.line_index = 0;
+    coordinate.sample_offset = 0;
+    coordinate.data_type_context = orc::VideoDataType::ColourNTSC;
+
+    const auto vectorscope_result = registry.request_data(
+        *dag,
+        orc::NodeID(1),
+        "preview.vectorscope",
+        orc::VideoDataType::ColourNTSC,
+        coordinate);
+
+    ASSERT_TRUE(vectorscope_result.success);
+    EXPECT_EQ(vectorscope_result.payload_kind, orc::PreviewViewPayloadKind::Vectorscope);
+    ASSERT_TRUE(vectorscope_result.vectorscope.has_value());
+    ASSERT_EQ(vectorscope_result.vectorscope->samples.size(), 1u);
+    EXPECT_DOUBLE_EQ(vectorscope_result.vectorscope->samples[0].u, 12.0);
+    EXPECT_DOUBLE_EQ(vectorscope_result.vectorscope->samples[0].v, -8.0);
 }
 
 } // namespace orc_unit_test

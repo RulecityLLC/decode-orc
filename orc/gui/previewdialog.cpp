@@ -33,6 +33,8 @@
 
 namespace {
 
+constexpr const char* kVectorscopeViewId = "preview.vectorscope";
+
 orc::ParameterValue resolveTweakParameterValue(
     const orc::ParameterDescriptor& desc,
     const std::map<std::string, orc::ParameterValue>& values)
@@ -477,22 +479,26 @@ void PreviewDialog::setCurrentNodeId(orc::NodeID node_id)
 
 void PreviewDialog::setAvailablePreviewViews(const std::vector<orc::PreviewViewDescriptor>& views)
 {
-    vectorscope_available_ = false;
+    available_preview_view_ids_.clear();
     for (const auto& view : views) {
-        if (view.id == "preview.vectorscope") {
-            vectorscope_available_ = true;
-            break;
-        }
+        available_preview_view_ids_.insert(view.id);
     }
+
+    const bool vectorscope_available = hasAvailablePreviewView(kVectorscopeViewId);
 
     if (show_vectorscope_action_) {
-        show_vectorscope_action_->setVisible(vectorscope_available_);
-        show_vectorscope_action_->setEnabled(vectorscope_available_);
+        show_vectorscope_action_->setVisible(vectorscope_available);
+        show_vectorscope_action_->setEnabled(vectorscope_available);
     }
 
-    if (!vectorscope_available_) {
+    if (!vectorscope_available) {
         closeVectorscopeDialogs();
     }
+}
+
+bool PreviewDialog::hasAvailablePreviewView(const std::string& view_id) const
+{
+    return available_preview_view_ids_.find(view_id) != available_preview_view_ids_.end();
 }
 
 void PreviewDialog::setSharedPreviewCoordinate(const orc::PreviewCoordinate& coordinate)
@@ -1030,7 +1036,7 @@ void PreviewDialog::notifyFrameChanged()
 
 void PreviewDialog::onVectorscopeActionTriggered()
 {
-    if (!vectorscope_available_ || !current_node_id_.is_valid()) {
+    if (!hasAvailablePreviewView(kVectorscopeViewId) || !current_node_id_.is_valid()) {
         return;
     }
 

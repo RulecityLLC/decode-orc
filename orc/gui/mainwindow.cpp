@@ -89,6 +89,8 @@ namespace orc {
 
 // Helper functions to convert between common types and presenter types
 namespace {
+    constexpr const char* kVectorscopeViewId = "preview.vectorscope";
+
     orc::presenters::VideoFormat toPresenterVideoFormat(orc::VideoSystem system) {
         switch (system) {
             case orc::VideoSystem::NTSC: return orc::presenters::VideoFormat::NTSC;
@@ -2395,6 +2397,11 @@ void MainWindow::refreshVectorscopeForCurrentCoordinate()
         return;
     }
 
+    if (!preview_dialog_->hasAvailablePreviewView(kVectorscopeViewId)) {
+        preview_dialog_->updateVectorscope(current_view_node_id_, std::nullopt);
+        return;
+    }
+
     // Keep vectorscope requests off the presenter while preview rendering is active.
     // This avoids UI-thread synchronous vectorscope calls racing the worker render path.
     if (preview_render_in_flight_) {
@@ -2416,7 +2423,7 @@ void MainWindow::refreshVectorscopeForCurrentCoordinate()
 
     const auto result = render_coordinator_->requestPreviewViewData(
         current_view_node_id_,
-        "preview.vectorscope",
+        kVectorscopeViewId,
         coordinate.data_type_context,
         coordinate);
 

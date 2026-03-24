@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <node_id.h>
 #include <orc_preview_types.h>
 #include <orc_preview_views.h>
@@ -100,6 +101,11 @@ public:
      * @brief Update view launcher availability using presenter/registry descriptors.
      */
     void setAvailablePreviewViews(const std::vector<orc::PreviewViewDescriptor>& views);
+
+    /**
+     * @brief Check whether a registry view is currently available for this node.
+     */
+    bool hasAvailablePreviewView(const std::string& view_id) const;
 
     /**
      * @brief Set and broadcast the shared preview coordinate for supplementary tools.
@@ -319,7 +325,7 @@ private:
     std::unordered_map<orc::NodeID, VectorscopeDialog*> vectorscope_dialogs_;
     orc::NodeID current_node_id_;
     std::optional<orc::PreviewCoordinate> shared_preview_coordinate_;
-    bool vectorscope_available_{false};
+    std::unordered_set<std::string> available_preview_view_ids_;
     
     // Current line scope context for cross-hair updates
     int current_line_scope_line_ = -1;  // Image Y coordinate of current line being scoped
