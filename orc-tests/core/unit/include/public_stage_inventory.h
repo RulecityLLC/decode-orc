@@ -19,6 +19,8 @@
 #include "../../../orc/core/stages/burst_level_analysis_sink/burst_level_analysis_sink_stage.h"
 #include "../../../orc/core/stages/cc_sink/cc_sink_stage.h"
 #include "../../../orc/core/stages/chroma_sink/chroma_sink_stage.h"
+#include "../../../orc/core/stages/chroma_sink/ffmpeg_video_sink_stage.h"
+#include "../../../orc/core/stages/chroma_sink/raw_video_sink_stage.h"
 #include "../../../orc/core/stages/daphne_vbi_sink/daphne_vbi_sink_stage.h"
 #include "../../../orc/core/stages/dropout_analysis_sink/dropout_analysis_sink_stage.h"
 #include "../../../orc/core/stages/dropout_correct/dropout_correct_stage.h"
@@ -70,6 +72,8 @@ namespace orc_unit_test
             {"source_align", PublicStageFamily::Transform, true, [] { return std::make_shared<orc::SourceAlignStage>(); }},
             {"mask_line", PublicStageFamily::Transform, true, [] { return std::make_shared<orc::MaskLineStage>(); }},
             {"chroma_sink", PublicStageFamily::Sink, false, [] { return std::make_shared<orc::ChromaSinkStage>(); }},
+            {"ffmpeg_video_sink", PublicStageFamily::Sink, true, [] { return std::make_shared<orc::FFmpegVideoSinkStage>(); }},
+            {"raw_video_sink", PublicStageFamily::Sink, true, [] { return std::make_shared<orc::RawVideoSinkStage>(); }},
             {"daphne_vbi_sink", PublicStageFamily::Sink, true, [] { return std::make_shared<orc::DaphneVBISinkStage>(orc::Factories::instance()); }},
             {"audio_sink", PublicStageFamily::Sink, true, [] { return std::make_shared<orc::AudioSinkStage>(); }},
             {"cc_sink", PublicStageFamily::Sink, true, [] { return std::make_shared<orc::CCSinkStage>(); }},

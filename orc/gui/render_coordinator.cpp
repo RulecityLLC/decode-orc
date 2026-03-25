@@ -12,6 +12,193 @@
 #include "render_presenter.h"
 #include <common_types.h>  // For analysis result types
 
+namespace {
+
+class RenderPresenterAdapter final : public orc::presenters::IRenderPresenter {
+public:
+    explicit RenderPresenterAdapter(void* project_handle)
+        : presenter_(project_handle)
+    {
+    }
+
+    void setDAG(std::shared_ptr<void> dag_handle) override { presenter_.setDAG(std::move(dag_handle)); }
+    bool getShowDropouts() const override { return presenter_.getShowDropouts(); }
+    void setShowDropouts(bool show) override { presenter_.setShowDropouts(show); }
+
+    orc::PreviewRenderResult renderPreview(
+        orc::NodeID node_id,
+        orc::PreviewOutputType output_type,
+        uint64_t output_index,
+        const std::string& option_id = "") override
+    {
+        return presenter_.renderPreview(node_id, output_type, output_index, option_id);
+    }
+
+    std::optional<orc::presenters::VBIFieldInfoView> getVBIData(orc::NodeID node_id, orc::FieldID field_id) override
+    {
+        return presenter_.getVBIData(node_id, field_id);
+    }
+
+    bool getDropoutAnalysisData(orc::NodeID node_id, std::vector<void*>& frame_stats, int32_t& total_frames) override
+    {
+        return presenter_.getDropoutAnalysisData(node_id, frame_stats, total_frames);
+    }
+
+    bool getSNRAnalysisData(orc::NodeID node_id, std::vector<void*>& frame_stats, int32_t& total_frames) override
+    {
+        return presenter_.getSNRAnalysisData(node_id, frame_stats, total_frames);
+    }
+
+    bool getBurstLevelAnalysisData(orc::NodeID node_id, std::vector<void*>& frame_stats, int32_t& total_frames) override
+    {
+        return presenter_.getBurstLevelAnalysisData(node_id, frame_stats, total_frames);
+    }
+
+    std::vector<orc::PreviewOutputInfo> getAvailableOutputs(orc::NodeID node_id) override
+    {
+        return presenter_.getAvailableOutputs(node_id);
+    }
+
+    LineSampleData getLineSamplesWithYC(
+        orc::NodeID node_id,
+        orc::PreviewOutputType output_type,
+        uint64_t output_index,
+        int line_number,
+        int sample_x,
+        int preview_width) override
+    {
+        auto source = presenter_.getLineSamplesWithYC(
+            node_id, output_type, output_index, line_number, sample_x, preview_width);
+        return LineSampleData{
+            std::move(source.composite_samples),
+            std::move(source.y_samples),
+            std::move(source.c_samples),
+            source.has_separate_channels,
+            source.first_field_height,
+            source.second_field_height,
+        };
+    }
+
+    std::optional<orc::SourceParameters> getVideoParameters(orc::NodeID node_id) override
+    {
+        return presenter_.getVideoParameters(node_id);
+    }
+
+    LineSampleData getFieldSamplesForTiming(
+        orc::NodeID node_id,
+        orc::PreviewOutputType output_type,
+        uint64_t output_index) override
+    {
+        auto source = presenter_.getFieldSamplesForTiming(node_id, output_type, output_index);
+        return LineSampleData{
+            std::move(source.composite_samples),
+            std::move(source.y_samples),
+            std::move(source.c_samples),
+            source.has_separate_channels,
+            source.first_field_height,
+            source.second_field_height,
+        };
+    }
+
+    orc::FrameLineNavigationResult navigateFrameLine(
+        orc::NodeID node_id,
+        orc::PreviewOutputType output_type,
+        uint64_t current_field,
+        int current_line,
+        int direction,
+        int field_height) override
+    {
+        auto result = presenter_.navigateFrameLine(
+            node_id, output_type, current_field, current_line, direction, field_height);
+        return orc::FrameLineNavigationResult{result.is_valid, result.new_field_index, result.new_line_number};
+    }
+
+    uint64_t triggerStage(orc::NodeID node_id, TriggerProgressCallback callback) override
+    {
+        return presenter_.triggerStage(node_id, std::move(callback));
+    }
+
+    void cancelTrigger() override { presenter_.cancelTrigger(); }
+
+    bool savePNG(
+        orc::NodeID node_id,
+        orc::PreviewOutputType output_type,
+        uint64_t output_index,
+        const std::string& filename,
+        const std::string& option_id = "",
+        double aspect_correction = 1.0) override
+    {
+        return presenter_.savePNG(node_id, output_type, output_index, filename, option_id, aspect_correction);
+    }
+
+    orc::ImageToFieldMappingResult mapImageToField(
+        orc::NodeID node_id,
+        orc::PreviewOutputType output_type,
+        uint64_t output_index,
+        int image_y,
+        int image_height) override
+    {
+        auto result = presenter_.mapImageToField(node_id, output_type, output_index, image_y, image_height);
+        return orc::ImageToFieldMappingResult{result.is_valid, result.field_index, result.field_line};
+    }
+
+    orc::FieldToImageMappingResult mapFieldToImage(
+        orc::NodeID node_id,
+        orc::PreviewOutputType output_type,
+        uint64_t output_index,
+        uint64_t field_index,
+        int field_line,
+        int image_height) override
+    {
+        auto result = presenter_.mapFieldToImage(node_id, output_type, output_index, field_index, field_line, image_height);
+        return orc::FieldToImageMappingResult{result.is_valid, result.image_y};
+    }
+
+    orc::FrameFieldsResult getFrameFields(orc::NodeID node_id, uint64_t frame_index) override
+    {
+        auto result = presenter_.getFrameFields(node_id, frame_index);
+        return orc::FrameFieldsResult{result.is_valid, result.first_field, result.second_field};
+    }
+
+    std::vector<orc::PreviewViewDescriptor> getAvailablePreviewViews(
+        orc::NodeID node_id,
+        orc::VideoDataType data_type) override
+    {
+        return presenter_.getAvailablePreviewViews(node_id, data_type);
+    }
+
+    orc::PreviewViewDataResult requestPreviewViewData(
+        orc::NodeID node_id,
+        const std::string& view_id,
+        orc::VideoDataType data_type,
+        const orc::PreviewCoordinate& coordinate) override
+    {
+        return presenter_.requestPreviewViewData(node_id, view_id, data_type, coordinate);
+    }
+
+    bool applyStageParameters(
+        orc::NodeID node_id,
+        const std::map<std::string, orc::ParameterValue>& params) override
+    {
+        return presenter_.applyStageParameters(node_id, params);
+    }
+
+    std::vector<orc::LiveTweakableParameterView> getStageTweakableParameters(orc::NodeID node_id) override
+    {
+        return presenter_.getStageTweakableParameters(node_id);
+    }
+
+    std::map<std::string, orc::ParameterValue> getStageCurrentParameters(orc::NodeID node_id) override
+    {
+        return presenter_.getStageCurrentParameters(node_id);
+    }
+
+private:
+    orc::presenters::RenderPresenter presenter_;
+};
+
+} // namespace
+
 // Forward declarations for core types used via opaque pointers
 namespace orc {
     class DAG;
@@ -28,6 +215,15 @@ namespace orc {
 
 RenderCoordinator::RenderCoordinator(QObject* parent)
     : QObject(parent)
+    , presenter_factory_([](void* project_handle) {
+        return std::make_shared<RenderPresenterAdapter>(project_handle);
+    })
+{
+}
+
+RenderCoordinator::RenderCoordinator(RenderPresenterFactory presenter_factory, QObject* parent)
+    : QObject(parent)
+    , presenter_factory_(std::move(presenter_factory))
 {
 }
 
@@ -106,6 +302,7 @@ uint64_t RenderCoordinator::requestPreview(const orc::NodeID& node_id,
                                           const std::string& option_id)
 {
     uint64_t id = nextRequestId();
+    latest_preview_request_id_.store(id);
     auto req = std::make_unique<RenderPreviewRequest>(id, node_id, output_type, output_index, option_id);
     enqueueRequest(std::move(req));
     return id;
@@ -217,8 +414,7 @@ orc::ImageToFieldMappingResult RenderCoordinator::mapImageToField(const orc::Nod
     if (!worker_render_presenter_) {
         return orc::ImageToFieldMappingResult{false, 0, 0};
     }
-    auto result = worker_render_presenter_->mapImageToField(node_id, output_type, output_index, image_y, image_height);
-    return orc::ImageToFieldMappingResult{result.is_valid, result.field_index, result.field_line};
+    return worker_render_presenter_->mapImageToField(node_id, output_type, output_index, image_y, image_height);
 }
 
 orc::FieldToImageMappingResult RenderCoordinator::mapFieldToImage(const orc::NodeID& node_id,
@@ -234,8 +430,7 @@ orc::FieldToImageMappingResult RenderCoordinator::mapFieldToImage(const orc::Nod
     if (!worker_render_presenter_) {
         return orc::FieldToImageMappingResult{false, 0};
     }
-    auto result = worker_render_presenter_->mapFieldToImage(node_id, output_type, output_index, field_index, field_line, image_height);
-    return orc::FieldToImageMappingResult{result.is_valid, result.image_y};
+    return worker_render_presenter_->mapFieldToImage(node_id, output_type, output_index, field_index, field_line, image_height);
 }
 
 orc::FrameFieldsResult RenderCoordinator::getFrameFields(const orc::NodeID& node_id, uint64_t frame_index)
@@ -246,8 +441,7 @@ orc::FrameFieldsResult RenderCoordinator::getFrameFields(const orc::NodeID& node
     if (!worker_render_presenter_) {
         return orc::FrameFieldsResult{false, 0, 0};
     }
-    auto result = worker_render_presenter_->getFrameFields(node_id, frame_index);
-    return orc::FrameFieldsResult{result.is_valid, result.first_field, result.second_field};
+    return worker_render_presenter_->getFrameFields(node_id, frame_index);
 }
 
 std::vector<orc::PreviewViewDescriptor> RenderCoordinator::getAvailablePreviewViews(
@@ -300,6 +494,9 @@ uint64_t RenderCoordinator::requestApplyStageParameters(
     std::map<std::string, orc::ParameterValue> params)
 {
     uint64_t id = nextRequestId();
+    // Apply requests trigger an immediate preview render on the worker thread;
+    // mark this as the latest preview request so stale-response filtering keeps it.
+    latest_preview_request_id_.store(id);
     auto req = std::make_unique<ApplyStageParametersRequest>(
         id, node_id, std::move(params), output_type, output_index, option_id);
     enqueueRequest(std::move(req));
@@ -309,6 +506,7 @@ uint64_t RenderCoordinator::requestApplyStageParameters(
 std::vector<orc::LiveTweakableParameterView> RenderCoordinator::getStageTweakableParameters(
     const orc::NodeID& node_id)
 {
+    std::lock_guard<std::mutex> lock(queue_mutex_);
     if (!worker_render_presenter_) {
         return {};
     }
@@ -469,8 +667,7 @@ void RenderCoordinator::handleUpdateDAG(const UpdateDAGRequest& req)
         }
         
         if (!worker_render_presenter_) {
-            worker_render_presenter_ = std::make_unique<orc::presenters::RenderPresenter>(
-                static_cast<orc::Project*>(worker_project_));
+            worker_render_presenter_ = presenter_factory_(worker_project_);
         }
         
         // Set the new DAG (cast away const since setDAG signature uses non-const void*)
@@ -505,6 +702,13 @@ void RenderCoordinator::handleRenderPreview(const RenderPreviewRequest& req)
             req.output_index,
             req.option_id
         );
+
+        // Drop stale preview responses when a newer preview request exists.
+        if (req.request_id != latest_preview_request_id_.load()) {
+            ORC_LOG_DEBUG("RenderCoordinator: Dropping stale preview response {} (latest {})",
+                          req.request_id, latest_preview_request_id_.load());
+            return;
+        }
         
         ORC_LOG_DEBUG("RenderCoordinator: Preview render complete, success={}", result.success);
         
@@ -512,6 +716,11 @@ void RenderCoordinator::handleRenderPreview(const RenderPreviewRequest& req)
         emit previewReady(req.request_id, std::move(result));
         
     } catch (const std::exception& e) {
+        if (req.request_id != latest_preview_request_id_.load()) {
+            ORC_LOG_DEBUG("RenderCoordinator: Suppressing stale preview error {} (latest {})",
+                          req.request_id, latest_preview_request_id_.load());
+            return;
+        }
         ORC_LOG_ERROR("RenderCoordinator: Preview render failed: {}", e.what());
         emit error(req.request_id, QString::fromStdString(e.what()));
     }
@@ -802,7 +1011,7 @@ void RenderCoordinator::handleNavigateFrameLine(const NavigateFrameLineRequest& 
     
     try {
         // Use the render presenter's method to navigate
-        auto nav_result = worker_render_presenter_->navigateFrameLine(
+        auto result = worker_render_presenter_->navigateFrameLine(
             req.node_id,
             req.output_type,
             req.current_field,
@@ -810,13 +1019,7 @@ void RenderCoordinator::handleNavigateFrameLine(const NavigateFrameLineRequest& 
             req.direction,
             req.field_height
         );
-        
-        // Convert to public_api type for signal
-        orc::FrameLineNavigationResult result;
-        result.is_valid = nav_result.is_valid;
-        result.new_field_index = nav_result.new_field_index;
-        result.new_line_number = nav_result.new_line_number;
-        
+
         // Emit result on GUI thread (using public_api types)
         emit frameLineNavigationReady(req.request_id, result);
         

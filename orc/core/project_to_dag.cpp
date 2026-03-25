@@ -84,9 +84,29 @@ std::shared_ptr<DAG> project_to_dag(const Project& project) {
         ORC_LOG_DEBUG("Node '{}': Converting from project (stage: {}, {} parameters)",
                       proj_node.node_id, proj_node.stage_name, proj_node.parameters.size());
         
-        // Copy and resolve parameters
-        dag_node.parameters = proj_node.parameters;
-        
+        // Build the effective parameter map:
+        // 1. Start from the stage's declared descriptor defaults for this project's
+        //    video format and source type.  This ensures format-specific defaults (e.g.
+        //    decoder_type="pal2d" for PAL) are applied even when a project file was
+        //    saved without an explicit value for a parameter.
+        // 2. Then overlay any values that are actually stored in the project file,
+        //    so user-saved choices always win.
+        auto* param_stage_for_defaults = dynamic_cast<ParameterizedStage*>(dag_node.stage.get());
+        if (param_stage_for_defaults) {
+            const auto descriptors = param_stage_for_defaults->get_parameter_descriptors(
+                project.get_video_format(), project.get_source_format());
+            for (const auto& desc : descriptors) {
+                if (desc.constraints.default_value.has_value()) {
+                    dag_node.parameters.emplace(desc.name, desc.constraints.default_value.value());
+                }
+            }
+        }
+
+        // Overlay the stored project parameters (they take precedence over defaults)
+        for (const auto& [key, value] : proj_node.parameters) {
+            dag_node.parameters[key] = value;
+        }
+
         // Resolve file paths relative to project root
         for (auto& [param_name, param_value] : dag_node.parameters) {
             if (std::holds_alternative<std::string>(param_value)) {

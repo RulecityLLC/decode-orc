@@ -210,6 +210,10 @@ private:
     std::string encoder_preset_;   // "fast", "medium", "slow", "veryslow"
     int encoder_crf_;              // 0-51, typically 18-28 for good quality
     int encoder_bitrate_;          // bits per second, 0 = use CRF instead
+    std::string hardware_encoder_; // "none", "vaapi", "nvenc", "qsv", "amf", "videotoolbox"
+    std::string prores_profile_;   // "proxy", "lt", "standard", "hq", "4444", "4444xq"
+    bool use_lossless_mode_;       // Enable lossless H.264/H.265/AV1 encoding
+    bool apply_deinterlace_;       // Apply bwdif deinterlacing filter
     
     // Status tracking
     std::string trigger_status_;

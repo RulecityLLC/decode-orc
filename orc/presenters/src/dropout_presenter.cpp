@@ -8,7 +8,7 @@
  */
 
 #include "dropout_presenter.h"
-#include "project_presenter.h"  // Need full definition to call methods
+#include "i_project_presenter.h"
 #include "../core/include/project.h"
 #include "../core/include/logging.h"
 #include "../core/include/video_field_representation.h"
@@ -20,15 +20,15 @@ namespace orc::presenters {
 
 class DropoutPresenter::Impl {
 public:
-    explicit Impl(orc::presenters::ProjectPresenter& project_presenter)
+    explicit Impl(orc::presenters::IProjectPresenter& project_presenter)
         : project_presenter_(project_presenter)
     {
     }
     
-    orc::presenters::ProjectPresenter& project_presenter_;
+    orc::presenters::IProjectPresenter& project_presenter_;
 }; // DEBUG: Extra brace was needed here!
 
-DropoutPresenter::DropoutPresenter(orc::presenters::ProjectPresenter& project_presenter)
+DropoutPresenter::DropoutPresenter(orc::presenters::IProjectPresenter& project_presenter)
     : impl_(std::make_unique<Impl>(project_presenter))
 {
 }

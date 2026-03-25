@@ -311,6 +311,8 @@ MainWindow::MainWindow(QWidget *parent)
             this, &MainWindow::onTriggerComplete, Qt::QueuedConnection);
     connect(render_coordinator_.get(), &RenderCoordinator::frameLineNavigationReady,
             this, &MainWindow::onFrameLineNavigationReady, Qt::QueuedConnection);
+    connect(render_coordinator_.get(), &RenderCoordinator::stageParametersApplied,
+            this, &MainWindow::onStageParametersApplied, Qt::QueuedConnection);
     connect(render_coordinator_.get(), &RenderCoordinator::error,
             this, &MainWindow::onCoordinatorError, Qt::QueuedConnection);
     
@@ -2715,12 +2717,28 @@ void MainWindow::onResetLiveTweaksRequested(orc::NodeID node_id)
 
 void MainWindow::onAllLiveTweaksDismissed()
 {
+    // Detect non-current nodes that had tweaks applied in the worker DAG before clearing maps.
+    bool has_noncurrent_dirty = false;
+    for (const auto& [nid, _] : live_tweak_values_by_node_) {
+        if (nid != current_view_node_id_) {
+            has_noncurrent_dirty = true;
+            break;
+        }
+    }
+
     // Reset the currently viewed node's render parameters if it has unsaved tweaks
     if (current_view_node_id_.is_valid() && hasStoredLiveTweakValues(current_view_node_id_)) {
         onResetLiveTweaksRequested(current_view_node_id_);
     }
     // Discard stored tweaks for all remaining nodes (not actively applied in render coordinator)
     clearAllLiveTweakState();
+
+    // Non-current nodes' stage state in the worker DAG was applied during navigation but
+    // never reversed.  Re-build the DAG from persisted parameters to purge stale stage state.
+    if (has_noncurrent_dirty) {
+        project_.rebuildDAG();
+        updatePreviewRenderer();
+    }
 }
 
 void MainWindow::onWriteLiveTweaksRequested(

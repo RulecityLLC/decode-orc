@@ -365,6 +365,7 @@ private:
     QTimer*       tweak_debounce_timer_{nullptr};
     orc::NodeID   tweak_node_id_;
     bool          tweak_unsaved_changes_{false};
+    orc::LiveTweakClass last_tweak_class_{orc::LiveTweakClass::DecodePhase};
     std::map<std::string, TweakWidgetEntry> tweak_widgets_;
 
     void buildTweakPanel(

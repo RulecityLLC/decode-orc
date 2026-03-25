@@ -69,6 +69,7 @@ std::vector<ParameterDescriptor> RawVideoSinkStage::get_parameter_descriptors(Vi
                                          "  y4m  - YUV444P16 with Y4M headers";
             // Override options to only include raw formats
             modified_param.constraints.allowed_strings = {"rgb", "yuv", "y4m"};
+            modified_param.constraints.default_value = std::string("rgb");
             filtered_params.push_back(modified_param);
             continue;
         }

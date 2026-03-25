@@ -44,9 +44,6 @@ add_library(orc-core STATIC
     # Abstract factories
     factories.cpp
 
-    # Crash handler
-    crash_handler.cpp
-    
     # TBC file I/O
     tbc_reader.cpp
     tbc_source_internal/tbc_audio_efm_handler.cpp

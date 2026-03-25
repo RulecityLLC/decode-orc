@@ -24,6 +24,9 @@ void force_link_FFmpegVideoSinkStage() {}
 
 FFmpegVideoSinkStage::FFmpegVideoSinkStage() : ChromaSinkStage()
 {
+    // Initialize to the default FFmpeg output format; the base constructor sets
+    // output_format_ = "rgb" which is invalid for this stage.
+    ChromaSinkStage::set_parameters({{"output_format", std::string("mp4-h264")}});
 }
 
 NodeTypeInfo FFmpegVideoSinkStage::get_node_type_info() const
@@ -92,6 +95,7 @@ std::vector<ParameterDescriptor> FFmpegVideoSinkStage::get_parameter_descriptors
                                          "Note: Hardware acceleration and lossless mode are set via separate parameters";
             // Override options to only include FFmpeg formats
             modified_param.constraints.allowed_strings = ffmpeg_formats;
+            modified_param.constraints.default_value = std::string("mp4-h264");
             filtered_params.push_back(modified_param);
             continue;
         }

@@ -49,8 +49,17 @@ namespace fs = std::filesystem;
 
 namespace orc {
 
+namespace {
+CrashHandlerConfig& crash_config_instance() {
+    // Keep config alive until process termination without running its destructor
+    // to avoid shutdown-order issues between static objects.
+    static CrashHandlerConfig* config = new CrashHandlerConfig();
+    return *config;
+}
+} // namespace
+
 // Global configuration and state
-static CrashHandlerConfig g_crash_config;
+static CrashHandlerConfig& g_crash_config = crash_config_instance();
 static std::string g_last_crash_bundle;
 static bool g_crash_handler_initialized = false;
 #ifndef _WIN32

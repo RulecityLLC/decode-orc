@@ -114,6 +114,10 @@ ChromaSinkStage::ChromaSinkStage()
     , encoder_preset_("medium")
     , encoder_crf_(18)
     , encoder_bitrate_(0)  // 0 = use CRF
+    , hardware_encoder_("none")
+    , prores_profile_("hq")
+    , use_lossless_mode_(false)
+    , apply_deinterlace_(false)
 {
 }
 
@@ -150,9 +154,17 @@ NodeTypeInfo ChromaSinkStage::get_node_type_info() const
 
 std::vector<ArtifactPtr> ChromaSinkStage::execute(
     const std::vector<ArtifactPtr>& inputs,
-    const std::map<std::string, ParameterValue>& parameters [[maybe_unused]],
+    const std::map<std::string, ParameterValue>& parameters,
     ObservationContext& observation_context [[maybe_unused]])
 {
+    // Apply parameters so decoder_type_ and other settings reflect the current project
+    // before the preview is rendered. Without this, the stage retains its constructor
+    // default (ntsc2d) when a PAL project is first loaded, causing the chroma preview
+    // to use the wrong decoder.
+    if (!parameters.empty()) {
+        set_parameters(parameters);
+    }
+
     // ChromaSinkStage is primarily a video output sink and does not extract observations.
     // Observations are collected by the LD sink or dedicated analysis stages.
     // Cache input for preview rendering (thread-safe)
@@ -215,7 +227,7 @@ std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(Vide
             "  Raw: rgb (RGB48), yuv (YUV444P16), y4m (YUV444P16 with Y4M headers)\n"
             "  Encoded: mp4-h264, mkv-ffv1 (requires FFmpeg libraries)",
             ParameterType::STRING,
-            {{}, {}, {}, OutputBackendFactory::getSupportedFormats(), false, std::nullopt}
+            {{}, {}, std::string("rgb"), OutputBackendFactory::getSupportedFormats(), false, std::nullopt}
         },
         ParameterDescriptor{
             "chroma_gain",
@@ -257,7 +269,7 @@ std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(Vide
             "Encoder Preset",
             "Encoder speed/quality preset (for H.264/H.265): fast, medium, slow, veryslow",
             ParameterType::STRING,
-            {{}, {}, {}, {"fast", "medium", "slow", "veryslow"}, false, 
+            {{}, {}, std::string("medium"), {"fast", "medium", "slow", "veryslow"}, false,
              ParameterDependency{"output_format", {"mp4-h264", "mkv-ffv1"}}}
         },
         ParameterDescriptor{
@@ -281,7 +293,7 @@ std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(Vide
             "Hardware Encoder",
             "Use hardware accelerated encoding (none, vaapi, nvenc, qsv, amf, videotoolbox). Auto-detection in preset dialog.",
             ParameterType::STRING,
-            {{}, {}, {}, {"none", "vaapi", "nvenc", "qsv", "amf", "videotoolbox"}, false,
+            {{}, {}, std::string("none"), {"none", "vaapi", "nvenc", "qsv", "amf", "videotoolbox"}, false,
              ParameterDependency{"output_format", {"mp4-h264", "mp4-hevc", "mov-h264", "mov-hevc"}}}
         },
         ParameterDescriptor{
@@ -289,7 +301,7 @@ std::vector<ParameterDescriptor> ChromaSinkStage::get_parameter_descriptors(Vide
             "ProRes Profile",
             "ProRes quality profile: proxy, lt, standard, hq (default), 4444, 4444xq",
             ParameterType::STRING,
-            {{}, {}, {}, {"proxy", "lt", "standard", "hq", "4444", "4444xq"}, false,
+            {{}, {}, std::string("hq"), {"proxy", "lt", "standard", "hq", "4444", "4444xq"}, false,
              ParameterDependency{"output_format", {"mov-prores"}}}
         },
         ParameterDescriptor{
@@ -435,6 +447,10 @@ std::map<std::string, ParameterValue> ChromaSinkStage::get_parameters() const
     params["encoder_bitrate"] = encoder_bitrate_;
     params["embed_audio"] = embed_audio_;
     params["embed_closed_captions"] = embed_closed_captions_;
+    params["hardware_encoder"] = hardware_encoder_;
+    params["prores_profile"] = prores_profile_;
+    params["use_lossless_mode"] = use_lossless_mode_;
+    params["apply_deinterlace"] = apply_deinterlace_;
     return params;
 }
 
@@ -592,6 +608,28 @@ bool ChromaSinkStage::set_parameters(const std::map<std::string, ParameterValue>
             } else if (std::holds_alternative<std::string>(value)) {
                 auto str_val = std::get<std::string>(value);
                 embed_closed_captions_ = (str_val == "true" || str_val == "1" || str_val == "yes");
+            }
+        } else if (key == "hardware_encoder") {
+            if (std::holds_alternative<std::string>(value)) {
+                hardware_encoder_ = std::get<std::string>(value);
+            }
+        } else if (key == "prores_profile") {
+            if (std::holds_alternative<std::string>(value)) {
+                prores_profile_ = std::get<std::string>(value);
+            }
+        } else if (key == "use_lossless_mode") {
+            if (std::holds_alternative<bool>(value)) {
+                use_lossless_mode_ = std::get<bool>(value);
+            } else if (std::holds_alternative<std::string>(value)) {
+                auto str_val = std::get<std::string>(value);
+                use_lossless_mode_ = (str_val == "true" || str_val == "1" || str_val == "yes");
+            }
+        } else if (key == "apply_deinterlace") {
+            if (std::holds_alternative<bool>(value)) {
+                apply_deinterlace_ = std::get<bool>(value);
+            } else if (std::holds_alternative<std::string>(value)) {
+                auto str_val = std::get<std::string>(value);
+                apply_deinterlace_ = (str_val == "true" || str_val == "1" || str_val == "yes");
             }
         }
     }
@@ -988,6 +1026,10 @@ bool ChromaSinkStage::trigger(
     backendConfig.encoder_bitrate = encoder_bitrate_;
     backendConfig.embed_audio = embed_audio_;
     backendConfig.embed_closed_captions = embed_closed_captions_;
+    backendConfig.options["hardware_encoder"] = hardware_encoder_;
+    backendConfig.options["prores_profile"] = prores_profile_;
+    backendConfig.options["use_lossless_mode"] = use_lossless_mode_ ? "true" : "false";
+    backendConfig.options["apply_deinterlace"] = apply_deinterlace_ ? "true" : "false";
     backendConfig.observation_context = &observation_context;
     
     // Set field range for audio and/or closed caption extraction

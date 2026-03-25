@@ -25,7 +25,7 @@ namespace orc {
 
 // Forward declare presenters
 namespace orc::presenters {
-    class ProjectPresenter;
+    class IProjectPresenter;
 }
 
 namespace orc::presenters {
@@ -111,7 +111,7 @@ public:
      * @brief Construct presenter for a project
      * @param project_presenter ProjectPresenter to delegate project operations to
      */
-    explicit DropoutPresenter(orc::presenters::ProjectPresenter& project_presenter);
+    explicit DropoutPresenter(orc::presenters::IProjectPresenter& project_presenter);
     
     /**
      * @brief Destructor

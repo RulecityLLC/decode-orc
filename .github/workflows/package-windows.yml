@@ -206,6 +206,8 @@ jobs:
           cmake --preset $configurePreset `
             "-DPROJECT_VERSION_OVERRIDE=$projectVersion" `
             "-DCMAKE_PREFIX_PATH=$($env:QT_ROOT_DIR)" `
+            -DBUILD_UNIT_TESTS=OFF `
+            -DBUILD_GUI_TESTS=OFF `
             -DVCPKG_INSTALLED_DIR="$PWD\vcpkg_installed" `
             -DVCPKG_MANIFEST_MODE=OFF `
             -DVCPKG_BUILD_TYPE=release `

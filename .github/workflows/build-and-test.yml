@@ -20,7 +20,7 @@ jobs:
       - name: Build and Test
         run: |
           nix develop -c bash -lc "
-            cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_UNIT_TESTS=ON
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_UNIT_TESTS=ON -DBUILD_GUI_TESTS=ON
             cmake --build build -j
-            ctest --test-dir build --output-on-failure
+            QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure
           "

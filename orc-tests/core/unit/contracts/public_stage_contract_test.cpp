@@ -74,7 +74,7 @@ namespace orc_unit_test
 
     TEST(PublicStageInventoryTest, inventoryCountMatchesPhaseFiveScope)
     {
-        EXPECT_EQ(public_stage_specs().size(), 23u);
+        EXPECT_EQ(public_stage_specs().size(), 25u);
     }
 
     TEST_P(PublicStageContractTest, interfaceMetadataIsConsistent)
@@ -232,6 +232,96 @@ namespace orc_unit_test
     INSTANTIATE_TEST_SUITE_P(
         PublicStages,
         PublicStageContractTest,
+        testing::Range(size_t{0}, public_stage_specs().size()),
+        stage_param_name);
+
+    // ── Format-specific default parameter parity ──────────────────────────────
+    //
+    // For registry-backed parameterised stages, the set of parameter names
+    // returned by get_parameters() must stay consistent across all supported
+    // video formats so that project_to_dag() can always seed every parameter
+    // from the format-aware descriptor defaults.
+
+    class FormatSpecificDefaultsTest : public testing::TestWithParam<size_t>
+    {
+    protected:
+        const PublicStageSpec& spec() const { return stage_spec_at(GetParam()); }
+    };
+
+    TEST_P(FormatSpecificDefaultsTest, palFormatDefaultsMatchRuntimeBehaviour)
+    {
+        if (!spec().registry_backed) {
+            GTEST_SKIP() << "Non-registry-backed base class skipped";
+        }
+
+        auto stage = spec().create();
+        auto* p = dynamic_cast<orc::ParameterizedStage*>(stage.get());
+        if (!p) {
+            GTEST_SKIP() << "Stage is not parameterized";
+        }
+
+        const auto descriptors =
+            p->get_parameter_descriptors(orc::VideoSystem::PAL, orc::SourceType::Composite);
+
+        for (const auto& desc : descriptors) {
+            if (!desc.constraints.default_value.has_value()) {
+                continue;
+            }
+
+            // Apply the descriptor default and verify get_parameters() reflects it.
+            auto fresh = spec().create();
+            auto* fp = dynamic_cast<orc::ParameterizedStage*>(fresh.get());
+            ASSERT_NE(fp, nullptr);
+            ASSERT_TRUE(fp->set_parameters({{desc.name, *desc.constraints.default_value}}))
+                << spec().inventory_id << " rejected PAL descriptor default for '" << desc.name << "'";
+
+            auto applied = fp->get_parameters();
+            auto it = applied.find(desc.name);
+            ASSERT_NE(it, applied.end())
+                << spec().inventory_id << " did not expose applied PAL default for '" << desc.name << "'";
+            EXPECT_EQ(it->second, *desc.constraints.default_value)
+                << spec().inventory_id << " PAL default mismatch for '" << desc.name << "'";
+        }
+    }
+
+    TEST_P(FormatSpecificDefaultsTest, ntscFormatDefaultsMatchRuntimeBehaviour)
+    {
+        if (!spec().registry_backed) {
+            GTEST_SKIP() << "Non-registry-backed base class skipped";
+        }
+
+        auto stage = spec().create();
+        auto* p = dynamic_cast<orc::ParameterizedStage*>(stage.get());
+        if (!p) {
+            GTEST_SKIP() << "Stage is not parameterized";
+        }
+
+        const auto descriptors =
+            p->get_parameter_descriptors(orc::VideoSystem::NTSC, orc::SourceType::Composite);
+
+        for (const auto& desc : descriptors) {
+            if (!desc.constraints.default_value.has_value()) {
+                continue;
+            }
+
+            auto fresh = spec().create();
+            auto* fp = dynamic_cast<orc::ParameterizedStage*>(fresh.get());
+            ASSERT_NE(fp, nullptr);
+            ASSERT_TRUE(fp->set_parameters({{desc.name, *desc.constraints.default_value}}))
+                << spec().inventory_id << " rejected NTSC descriptor default for '" << desc.name << "'";
+
+            auto applied = fp->get_parameters();
+            auto it = applied.find(desc.name);
+            ASSERT_NE(it, applied.end())
+                << spec().inventory_id << " did not expose applied NTSC default for '" << desc.name << "'";
+            EXPECT_EQ(it->second, *desc.constraints.default_value)
+                << spec().inventory_id << " NTSC default mismatch for '" << desc.name << "'";
+        }
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        PublicStages,
+        FormatSpecificDefaultsTest,
         testing::Range(size_t{0}, public_stage_specs().size()),
         stage_param_name);
 } // namespace orc_unit_test
