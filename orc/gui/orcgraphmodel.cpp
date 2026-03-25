@@ -10,7 +10,7 @@
 #include "orcgraphmodel.h"
 #include "node_type_helper.h"
 #include "logging.h"
-#include "presenters/include/project_presenter.h"
+#include "presenters/include/i_project_presenter.h"
 #include <QtNodes/ConnectionIdUtils>
 #include <QtNodes/StyleCollection>
 
@@ -20,7 +20,7 @@ using orc::NodeID;
 using orc::get_node_type_info;
 using orc::NodeTypeInfo;
 
-OrcGraphModel::OrcGraphModel(orc::presenters::ProjectPresenter& presenter, QObject* parent)
+OrcGraphModel::OrcGraphModel(orc::presenters::IProjectPresenter& presenter, QObject* parent)
     : QtNodes::AbstractGraphModel()
     , presenter_(presenter)
 {

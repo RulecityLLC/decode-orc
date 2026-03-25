@@ -79,6 +79,8 @@ jobs:
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_UNIT_TESTS=OFF \
+            -DBUILD_GUI_TESTS=OFF \
             -DBUILD_TESTS=OFF \
             -DBUILD_DOCS=OFF \
             -DBUILD_ENCODE_ORC=OFF \

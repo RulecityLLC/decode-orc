@@ -33,7 +33,7 @@ Run `ctest -R MVPArchitectureCheck` to validate boundaries before submitting PRs
 - If you're unsure about license compatibility, ask in the issue or PR
 - vcpkg.json and flake.nix changes will be reviewed for license compliance during CI/CD
 
-**License file location:** See [LICENSE](../../LICENSE) in the repository root (GPLv3).
+**License file location:** See [LICENSE](../LICENSE) in the repository root (GPLv3).
 
 ## Source Code Structure
 
@@ -55,8 +55,11 @@ decode-orc/
 │   │   └── main.cpp
 │   └── gui/                       # Qt6 graphical interface (optional, BUILD_GUI=ON)
 │       └── [Qt widgets & dialogs]
-├── orc-unit-tests/                # Unit test suite (compiled if BUILD_UNIT_TESTS=ON)
-│   └── core/                      # Tests for core module
+├── orc-tests/                     # Unified test tree (compiled when test flags are enabled)
+│   ├── core/
+│   │   └── unit/                  # Unit tests for core module
+│   └── gui/
+│       └── unit/                  # GUI unit tests
 ├── cmake/                         # CMake build utilities
 │   ├── check_mvp_architecture.sh  # MVP boundary validation script
 │   ├── MVPEnforcement.cmake       # MVP constraint macros
@@ -102,7 +105,7 @@ decode-orc/
 | `orc/presenters` | Translates core → view models | core, view-types | common, core, view-types |
 | `orc/gui` | Qt6 UI; consumes presenters | presenters, view-types, Qt6 | presenters, view-types, common |
 | `orc/cli` | CLI; consumes presenters | presenters, view-types | presenters, view-types, common |
-| `orc-unit-tests` | Unit tests (mocked dependencies) | gtest | any (for testing) |
+| `orc-tests` | Unit tests (mocked dependencies) | gtest | any (for testing) |
 
 **MVP Enforcement Rules:**
 
@@ -113,7 +116,7 @@ decode-orc/
 
 **Adding new features:**
 
-1. **Business logic:** Add implementation to `orc/core/`; add corresponding unit tests to `orc-unit-tests/core/`
+1. **Business logic:** Add implementation to `orc/core/`; add corresponding unit tests to `orc-tests/core/unit/`
 2. **Presentation layer:** Add presenter in `orc/presenters/` to translate core output; add view types to `orc/view-types/` if needed
 3. **UI layer:** Add GUI dialogs/widgets to `orc/gui/` or CLI commands to `orc/cli/`; both consume presenters, never core directly
 
@@ -127,7 +130,7 @@ decode-orc/
 
 **Where to find things:**
 
-- **Tests:** `orc-unit-tests/core/` (organized by module)
+- **Tests:** `orc-tests/` (organized by source module, for example `core/unit/` and `gui/unit/`)
 - **Headers:** `orc/<module>/` (public headers in root; internal in subdirs)
 - **Build outputs:** `build/bin/` (orc-gui, orc-cli); `build/lib/` (libraries)
 - **Generated files:** `build/generated/version.h` (auto-generated version info)
@@ -155,12 +158,15 @@ ctest --test-dir build --output-on-failure
 **Key build flags:**
 - `BUILD_GUI=ON` (default) — build GUI; set OFF for CLI-only testing
 - `BUILD_UNIT_TESTS=ON` (local) / OFF (release) — controls unit test compilation
+- `BUILD_GUI_TESTS=ON` — enables the `orc-tests/gui/unit` test subtree when GUI behavior changes are in scope
 - `CMAKE_BUILD_TYPE=Debug` (local) / Release (packaging)
 - `EZPWD_INCLUDE_DIR` — path to ezpwd-reed-solomon headers (auto-set in Nix, required for manual builds)
 
 ## Testing Strategy
 
-From TESTING.md, the project targets ~80% unit test coverage with these principles:
+`TESTING.md` is the authoritative source for test strategy, labels, and definition-of-done guidance for both `orc-core` and `orc-gui` work. Use that document when the codebase or older planning docs disagree.
+
+The project targets ~80% unit test coverage with these principles:
 
 - **Unit tests:** Mock all dependencies; never hit filesystem, network, database, or system clock. Test one method/class in isolation.
 - **Integration tests:** Sparse; reserved for happy-path wiring checks only.
@@ -169,47 +175,66 @@ From TESTING.md, the project targets ~80% unit test coverage with these principl
 **When adding/changing behavior:**
 1. Write or update unit tests first.
 2. Mock external dependencies (file I/O, network, etc.).
-3. Run `ctest --test-dir build --output-on-failure` locally.
+3. Run the label-appropriate `ctest` invocation from `TESTING.md` locally.
 4. Verify no new MVP violations: `ctest -R MVPArchitectureCheck` or `cmake --build build --target check-mvp`.
 
-### New Stage Expectations (Required)
+### CTest Labels
 
-The current stage portfolio has complete stage-family unit-test coverage (source, transform, sink) and shared contract coverage. New stages must preserve this standard immediately when introduced.
+Use CTest labels to keep local iteration and CI slices aligned with the repo conventions.
 
-**Required for every new stage (`orc/core/stages/<stage_id>`):**
-- Add a matching unit-test suite under `orc-unit-tests/core/stages/<stage_id>` in the same PR.
-- Register/build the suite in `orc-unit-tests/core/CMakeLists.txt` using the established `gtest_discover_tests` pattern and `unit` label.
-- Ensure the stage is included in stage inventory/registration checks (`StageRegistry` and node-type discovery) so contract tests continue to validate global wiring.
+| Label | Scope |
+|-------|-------|
+| `unit` | Fast GoogleTest-based unit-test suites |
+| `mvp` | MVP architecture boundary check only (`MVPArchitectureCheck`) |
+| `sources` | Source-stage unit tests |
+| `transforms` | Transform-stage unit tests |
+| `sinks` | Sink-stage unit tests |
+| `contracts` | Cross-stage contract and registry coverage |
+| `gui` | Any test in `orc-tests/gui/unit` |
+| `gui-logic` | Tier 1 GUI helper tests with no `QApplication` |
+| `gui-model` | Tier 2 GUI model/coordinator tests with `QCoreApplication` |
+| `gui-widget` | Tier 3 offscreen widget/dialog tests |
 
-**Family-specific minimum behavior coverage:**
-- **Source stage:**
-  - descriptor schema + runtime default parity (including Edit Parameters defaults)
-  - valid parameter path success + artifact metadata expectations
-  - invalid parameter/dependency-failure status behavior
-- **Transform stage:**
-  - input precondition handling (missing/wrong/incompatible artifacts)
-  - deterministic transformation behavior on controlled fixtures
-  - representative parameter-branch behavior and failure propagation
-- **Sink stage:**
-  - output parameter schema/default parity
-  - dependency interaction/status contracts using interface mocks where seams exist
-  - explicit success/failure trigger status behavior without real filesystem/network/database/system-clock coupling
+### orc-core Expectations
 
-**Cross-cutting contract expectations for new stages:**
-- Stage interface invariants remain coherent (`required_input_count`, `output_count`, node metadata vs runtime behavior).
-- Parameter descriptors/defaults and runtime parsing remain consistent.
-- Observation declarations, where used, remain schema/type-safe and deterministic.
-- Trigger lifecycle behavior remains coherent for triggerable stages (idle/in-progress/success/failure/cancel semantics).
-- New stage IDs must participate cleanly in registry and node-type discovery paths.
+For new stages and stage behavior changes, follow the `orc-core` section in `TESTING.md`. The detailed expectations previously duplicated in `docs/stage-test-expectations.md` now live there.
 
-**Validation gates before proposing changes:**
+Minimum definition of done for stage work:
+- Add the matching suite under `orc-tests/core/unit/stages/<stage_id>` in the same PR.
+- Register the suite with `gtest_discover_tests(... PROPERTIES LABELS ...)` using `unit` plus the appropriate family label.
+- Preserve shared contract coverage for registry, node discovery, parameter/default parity, and project-to-DAG wiring.
+
+### orc-gui Expectations
+
+For GUI testing tiers, offscreen harness details, and command examples, follow the `orc-gui` section in `TESTING.md`.
+
+Required for GUI behavior changes in `orc/gui/`:
+- Enable `BUILD_GUI_TESTS=ON`.
+- Add tier-appropriate tests under `orc-tests/gui/unit/` in the same PR.
+- Keep GUI tests at the presenter boundary; do not run a live `orc-core` pipeline in GUI unit tests.
+- Use `QT_QPA_PLATFORM=offscreen` for widget/dialog coverage.
+
+Minimum GUI coverage expectations:
+- Pure helper logic: Tier 1 `gui-logic` coverage.
+- Model/coordinator classes: Tier 2 `gui-model` coverage with presenter-boundary mocks.
+- Dialog classes: Tier 3 `gui-widget` smoke coverage using the offscreen backend.
+- Parameter-editing dialogs: Tier 3 smoke coverage plus parameter round-trip coverage.
+- `RenderCoordinator`: request ordering, response delivery, stale-response suppression, and clean shutdown semantics.
+
+### Validation Gates
+
+Run the narrowest set that matches the change scope before proposing changes.
+
+Core-only or mixed changes:
 1. `cmake --build build -j`
 2. `ctest --test-dir build --output-on-failure`
 3. `ctest --test-dir build -R MVPArchitectureCheck --output-on-failure`
 
-**Review bar for stage additions:**
-- Do not land a new stage implementation without its stage-family unit tests and required contract/registration coverage.
-- If a contract test is intentionally skipped for a stage capability mismatch, document why in the test body so skip intent is explicit and reviewable.
+GUI behavior changes:
+1. `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_UNIT_TESTS=ON -DBUILD_GUI_TESTS=ON`
+2. `cmake --build build -j`
+3. `QT_QPA_PLATFORM=offscreen ctest --test-dir build -L gui --output-on-failure`
+4. `ctest --test-dir build -R MVPArchitectureCheck --output-on-failure`
 
 ## CI/CD & Multi-Platform
 
@@ -247,13 +272,19 @@ From CONTRIBUTING.md:
 
 ```bash
 # Clean build
-rm -rf build && cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_UNIT_TESTS=ON && cmake --build build -j
+rm -rf build && cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_UNIT_TESTS=ON -DBUILD_GUI_TESTS=ON && cmake --build build -j
 
 # Run only unit tests (skip MVP check)
 ctest --test-dir build -E MVPArchitectureCheck --output-on-failure
 
 # Check MVP architecture only
 ctest --test-dir build -R MVPArchitectureCheck
+
+# Run all GUI tests with the offscreen backend
+QT_QPA_PLATFORM=offscreen ctest --test-dir build -L gui --output-on-failure
+
+# Run a GUI widget slice only
+QT_QPA_PLATFORM=offscreen ctest --test-dir build -L gui-widget --output-on-failure
 
 # Build without tests (faster for iteration)
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_UNIT_TESTS=OFF && cmake --build build -j

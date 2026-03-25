@@ -15,6 +15,10 @@ endif()
 # Enable testing so we can register architecture checks with CTest
 enable_testing()
 
+# Build options
+option(BUILD_UNIT_TESTS "Build unit tests" ON)
+option(BUILD_GUI_TESTS "Build GUI unit tests" OFF)
+
 # ---------------------------------------------------------------------------
 # EFM decoder dependencies
 # spdlog and fmt must be found before add_subdirectory(orc) so that the
@@ -44,9 +48,9 @@ endif()
 # Add the orc subdirectory which contains the main project
 add_subdirectory(orc)
 
-if(BUILD_UNIT_TESTS)
-    # Add the subdirectory which contains the unit test project(s)
-    add_subdirectory(orc-unit-tests)
+if(BUILD_UNIT_TESTS OR BUILD_GUI_TESTS)
+    # Add the unified test tree rooted at orc-tests/
+    add_subdirectory(orc-tests)
 endif()
 
 # MVP architecture validation

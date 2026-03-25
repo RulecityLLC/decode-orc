@@ -35,6 +35,7 @@
 #include "vbi_view_models.h"
 
 namespace orc::presenters {
+    class IRenderPresenter;
     class RenderPresenter;
 }
 
@@ -408,6 +409,110 @@ struct FrameLineNavigationResponse : public RenderResponse {
         , result(nav_result) {}
 };
 
+namespace orc::presenters {
+
+class IRenderPresenter {
+public:
+    using TriggerProgressCallback = std::function<void(int, int, const std::string&)>;
+
+    struct LineSampleData {
+        std::vector<uint16_t> composite_samples;
+        std::vector<uint16_t> y_samples;
+        std::vector<uint16_t> c_samples;
+        bool has_separate_channels;
+        int first_field_height = 0;
+        int second_field_height = 0;
+    };
+
+    virtual ~IRenderPresenter() = default;
+
+    virtual void setDAG(std::shared_ptr<void> dag_handle) = 0;
+    virtual bool getShowDropouts() const = 0;
+    virtual void setShowDropouts(bool show) = 0;
+
+    virtual orc::PreviewRenderResult renderPreview(
+        NodeID node_id,
+        orc::PreviewOutputType output_type,
+        uint64_t output_index,
+        const std::string& option_id = "") = 0;
+
+    virtual std::optional<VBIFieldInfoView> getVBIData(NodeID node_id, FieldID field_id) = 0;
+    virtual bool getDropoutAnalysisData(NodeID node_id, std::vector<void*>& frame_stats, int32_t& total_frames) = 0;
+    virtual bool getSNRAnalysisData(NodeID node_id, std::vector<void*>& frame_stats, int32_t& total_frames) = 0;
+    virtual bool getBurstLevelAnalysisData(NodeID node_id, std::vector<void*>& frame_stats, int32_t& total_frames) = 0;
+    virtual std::vector<orc::PreviewOutputInfo> getAvailableOutputs(NodeID node_id) = 0;
+
+    virtual LineSampleData getLineSamplesWithYC(
+        NodeID node_id,
+        orc::PreviewOutputType output_type,
+        uint64_t output_index,
+        int line_number,
+        int sample_x,
+        int preview_width) = 0;
+
+    virtual std::optional<orc::SourceParameters> getVideoParameters(NodeID node_id) = 0;
+
+    virtual LineSampleData getFieldSamplesForTiming(
+        NodeID node_id,
+        orc::PreviewOutputType output_type,
+        uint64_t output_index) = 0;
+
+    virtual orc::FrameLineNavigationResult navigateFrameLine(
+        NodeID node_id,
+        orc::PreviewOutputType output_type,
+        uint64_t current_field,
+        int current_line,
+        int direction,
+        int field_height) = 0;
+
+    virtual uint64_t triggerStage(NodeID node_id, TriggerProgressCallback callback) = 0;
+    virtual void cancelTrigger() = 0;
+
+    virtual bool savePNG(
+        NodeID node_id,
+        orc::PreviewOutputType output_type,
+        uint64_t output_index,
+        const std::string& filename,
+        const std::string& option_id = "",
+        double aspect_correction = 1.0) = 0;
+
+    virtual orc::ImageToFieldMappingResult mapImageToField(
+        NodeID node_id,
+        orc::PreviewOutputType output_type,
+        uint64_t output_index,
+        int image_y,
+        int image_height) = 0;
+
+    virtual orc::FieldToImageMappingResult mapFieldToImage(
+        NodeID node_id,
+        orc::PreviewOutputType output_type,
+        uint64_t output_index,
+        uint64_t field_index,
+        int field_line,
+        int image_height) = 0;
+
+    virtual orc::FrameFieldsResult getFrameFields(NodeID node_id, uint64_t frame_index) = 0;
+
+    virtual std::vector<orc::PreviewViewDescriptor> getAvailablePreviewViews(
+        NodeID node_id,
+        orc::VideoDataType data_type) = 0;
+
+    virtual orc::PreviewViewDataResult requestPreviewViewData(
+        NodeID node_id,
+        const std::string& view_id,
+        orc::VideoDataType data_type,
+        const orc::PreviewCoordinate& coordinate) = 0;
+
+    virtual bool applyStageParameters(
+        NodeID node_id,
+        const std::map<std::string, ParameterValue>& params) = 0;
+
+    virtual std::vector<orc::LiveTweakableParameterView> getStageTweakableParameters(NodeID node_id) = 0;
+    virtual std::map<std::string, ParameterValue> getStageCurrentParameters(NodeID node_id) = 0;
+};
+
+} // namespace orc::presenters
+
 /**
  * @brief Coordinator that owns all core rendering state in a worker thread
  * 
@@ -426,7 +531,10 @@ class RenderCoordinator : public QObject {
     Q_OBJECT
     
 public:
+    using RenderPresenterFactory = std::function<std::shared_ptr<orc::presenters::IRenderPresenter>(void*)>;
+
     explicit RenderCoordinator(QObject* parent = nullptr);
+    explicit RenderCoordinator(RenderPresenterFactory presenter_factory, QObject* parent = nullptr);
     ~RenderCoordinator();
     
     // Prevent copying/moving
@@ -924,14 +1032,16 @@ private:
     std::queue<std::unique_ptr<RenderRequest>> request_queue_;
     
     std::atomic<uint64_t> next_request_id_{1};
+    std::atomic<uint64_t> latest_preview_request_id_{0};
     
     // ========================================================================
     // Worker thread state (owned by worker thread, never accessed from GUI)
     // ========================================================================
     
     std::shared_ptr<const void> worker_dag_;
-    std::unique_ptr<orc::presenters::RenderPresenter> worker_render_presenter_;
+    std::shared_ptr<orc::presenters::IRenderPresenter> worker_render_presenter_;
     void* worker_project_{nullptr};  // Non-owning opaque handle for presenter
+    RenderPresenterFactory presenter_factory_;
     
     // Phase 2.7: Trigger state now managed by RenderPresenter
     // Removed: trigger_cancel_requested_ and current_trigger_stage_

@@ -26,8 +26,7 @@ generate_platform_icons(
 # GUI Application Sources
 # =============================================================================
 
-add_executable(orc-gui MACOSX_BUNDLE
-    main.cpp
+set(ORC_GUI_LIB_SOURCES
     mainwindow.cpp
     mainwindow.h
     mainwindow_coordinator_callbacks.cpp
@@ -133,6 +132,12 @@ add_executable(orc-gui MACOSX_BUNDLE
     orc_gui_resources.qrc
 )
 
+add_library(orc-gui-lib STATIC ${ORC_GUI_LIB_SOURCES})
+
+add_executable(orc-gui MACOSX_BUNDLE
+    main.cpp
+)
+
 # =============================================================================
 # Link Libraries
 # =============================================================================
@@ -149,14 +154,16 @@ else()
     message(FATAL_ERROR "QtNodes target not found")
 endif()
 
-target_link_libraries(orc-gui PRIVATE 
+target_link_libraries(orc-gui-lib PUBLIC
     orc-common           # Common types shared across all layers
     orc-view-types       # Shared presentation layer data structures
     orc-presenters       # Presenter layer (privately links orc-core)
-    Qt6::Core 
+    Qt6::Core
     Qt6::Widgets
     ${QTNODES_TARGET}
 )
+
+target_link_libraries(orc-gui PRIVATE orc-gui-lib)
 
 # QtNodes may be provided as a static library (e.g., Nix dev shells).
 # Ensure NODE_EDITOR_STATIC is defined for consumers in that case.
@@ -168,12 +175,12 @@ if(TARGET ${QTNODES_TARGET})
             get_target_property(QTNODES_LOCATION ${QTNODES_TARGET} IMPORTED_LOCATION_RELEASE)
         endif()
         if(QTNODES_LOCATION MATCHES "\\.a$")
-            target_compile_definitions(orc-gui PRIVATE NODE_EDITOR_STATIC)
+            target_compile_definitions(orc-gui-lib PUBLIC NODE_EDITOR_STATIC)
         endif()
     else()
         get_target_property(QTNODES_TYPE ${QTNODES_TARGET} TYPE)
         if(QTNODES_TYPE STREQUAL "STATIC_LIBRARY")
-            target_compile_definitions(orc-gui PRIVATE NODE_EDITOR_STATIC)
+            target_compile_definitions(orc-gui-lib PUBLIC NODE_EDITOR_STATIC)
         endif()
     endif()
 endif()
@@ -187,6 +194,12 @@ endif()
 #                directing the developer to use the appropriate presenter or
 #                public API type instead.
 # =============================================================================
+target_compile_definitions(orc-gui-lib PRIVATE
+    $<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG>
+    $<$<NOT:$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE>
+    ORC_GUI_BUILD
+)
+
 target_compile_definitions(orc-gui PRIVATE
     $<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG>
     $<$<NOT:$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE>
@@ -207,11 +220,19 @@ target_compile_definitions(orc-gui PRIVATE
 # details. If you need access to core functionality, add it to the appropriate
 # presenter or create a new public API type.
 # =============================================================================
-target_include_directories(orc-gui PRIVATE
+target_include_directories(orc-gui-lib PUBLIC
     ${CMAKE_SOURCE_DIR}/orc/public
     ${CMAKE_SOURCE_DIR}/orc/presenters/include
     ${CMAKE_SOURCE_DIR}/orc/common/include
     ${CMAKE_SOURCE_DIR}/orc
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_include_directories(orc-gui-lib PRIVATE
+    ${CMAKE_BINARY_DIR}/generated
+)
+
+target_include_directories(orc-gui PRIVATE
     ${CMAKE_BINARY_DIR}/generated
 )
 

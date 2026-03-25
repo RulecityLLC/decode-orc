@@ -15,7 +15,7 @@
 
 // Forward declaration
 namespace orc::presenters {
-    class ProjectPresenter;
+    class IProjectPresenter;
 }
 
 // Use orc::NodeID in this file
@@ -48,7 +48,7 @@ public:
      * @param presenter The project presenter to use
      * @param parent Parent QObject
      */
-    explicit OrcGraphModel(orc::presenters::ProjectPresenter& presenter, QObject* parent = nullptr);
+    explicit OrcGraphModel(orc::presenters::IProjectPresenter& presenter, QObject* parent = nullptr);
     ~OrcGraphModel() override = default;
 
     /// @name QtNodes AbstractGraphModel Interface
@@ -110,8 +110,8 @@ public:
     
     /// @name Presenter Access
     /// @{
-    orc::presenters::ProjectPresenter& presenter() { return presenter_; }  ///< Get presenter reference
-    const orc::presenters::ProjectPresenter& presenter() const { return presenter_; }  ///< Get const presenter reference
+    orc::presenters::IProjectPresenter& presenter() { return presenter_; }  ///< Get presenter reference
+    const orc::presenters::IProjectPresenter& presenter() const { return presenter_; }  ///< Get const presenter reference
     /// @}
     
     /**
@@ -122,7 +122,7 @@ public:
     std::string getNodeStageName(const NodeID& node_id) const;
 
 private:
-    orc::presenters::ProjectPresenter& presenter_;
+    orc::presenters::IProjectPresenter& presenter_;
     
     // Map between QtNodes IDs and ORC node IDs
     std::map<NodeId, NodeID> qt_to_orc_nodes_;

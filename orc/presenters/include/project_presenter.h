@@ -13,13 +13,13 @@
 #include <vector>
 #include <map>
 #include <memory>
-#include <functional>
 #include <optional>
 #include <node_id.h>
-#include <node_type.h>
 #include <field_id.h>
 #include <parameter_types.h>
 #include <orc_source_parameters.h>  // For public_api::SourceParameters
+#include "i_project_presenter.h"
+#include "project_presenter_types.h"
 #include "stage_inspection_view_models.h"
 
 // Forward declare core Project type
@@ -45,66 +45,6 @@ void initCoreLogging(const std::string& level = "info",
                      const std::string& log_file = "");
 
 /**
- * @brief Video format enumeration for GUI use
- */
-enum class VideoFormat {
-    NTSC,
-    PAL,
-    Unknown
-};
-
-/**
- * @brief Source type enumeration for GUI use
- */
-enum class SourceType {
-    Composite,
-    YC,
-    Unknown
-};
-
-/**
- * @brief Information about a stage available in the registry
- */
-struct StageInfo {
-    std::string name;           ///< Internal stage name
-    std::string display_name;   ///< User-friendly display name
-    std::string description;    ///< Stage description
-    NodeType node_type;         ///< Type of node
-    bool is_source;             ///< True if this is a source stage
-    bool is_sink;               ///< True if this is a sink stage
-};
-
-/**
- * @brief Information about a node in the project
- */
-struct NodeInfo {
-    NodeID node_id;             ///< Node identifier
-    std::string stage_name;     ///< Stage type name
-    std::string label;          ///< User-assigned label
-    double x_position;          ///< X position in graph
-    double y_position;          ///< Y position in graph
-    bool can_remove;            ///< Whether node can be removed
-    bool can_trigger;           ///< Whether node can be triggered
-    bool can_inspect;           ///< Whether node can be inspected
-    std::string remove_reason;  ///< Reason if cannot remove
-    std::string trigger_reason; ///< Reason if cannot trigger
-    std::string inspect_reason; ///< Reason if cannot inspect
-};
-
-/**
- * @brief Edge between two nodes
- */
-struct EdgeInfo {
-    NodeID source_node;         ///< Source node ID
-    NodeID target_node;         ///< Target node ID
-};
-
-/**
- * @brief Progress callback for batch operations
- */
-using ProgressCallback = std::function<void(size_t current, size_t total, const std::string& message)>;
-
-/**
  * @brief ProjectPresenter - Manages project creation, loading, and modification
  * 
  * This presenter extracts all project-related business logic from the GUI layer.
@@ -117,7 +57,7 @@ using ProgressCallback = std::function<void(size_t current, size_t total, const 
  * 
  * The presenter owns the core Project object and coordinates all operations.
  */
-class ProjectPresenter {
+class ProjectPresenter : public IProjectPresenter {
 public:
     /**
      * @brief Construct presenter with new empty project
@@ -139,7 +79,7 @@ public:
     /**
      * @brief Destructor
      */
-    ~ProjectPresenter();
+    ~ProjectPresenter() override;
     
     // Disable copy, enable move
     ProjectPresenter(const ProjectPresenter&) = delete;
@@ -170,99 +110,103 @@ public:
      * @param input_files List of input TBC files
      * @return true on success
      */
-    bool createQuickProject(VideoFormat format, SourceType source, const std::vector<std::string>& input_files);
+    bool createQuickProject(VideoFormat format, SourceType source, const std::vector<std::string>& input_files) override;
     
     /**
      * @brief Load project from file
      * @param project_path Path to .orcprj file
      * @return true on success
      */
-    bool loadProject(const std::string& project_path);
+    bool loadProject(const std::string& project_path) override;
     
     /**
      * @brief Save project to file
      * @param project_path Path to save to
      * @return true on success
      */
-    bool saveProject(const std::string& project_path);
+    bool saveProject(const std::string& project_path) override;
     
     /**
      * @brief Clear the current project
      */
-    void clearProject();
+    void clearProject() override;
     
     /**
      * @brief Check if project has been modified since last save
      */
-    bool isModified() const;
+    bool isModified() const override;
 
     /**
      * @brief Clear modified state (treat current project as unmodified)
      */
-    void clearModifiedFlag();
+    void clearModifiedFlag() override;
     
     /**
      * @brief Get project file path
      */
-    std::string getProjectPath() const;
+    std::string getProjectPath() const override;
     
     // === Project Metadata ===
     
     /**
      * @brief Get project name
      */
-    std::string getProjectName() const;
+    std::string getProjectName() const override;
     
     /**
      * @brief Set project name
      */
-    void setProjectName(const std::string& name);
+    void setProjectName(const std::string& name) override;
     
     /**
      * @brief Get project description
      */
-    std::string getProjectDescription() const;
+    std::string getProjectDescription() const override;
     
     /**
      * @brief Set project description
      */
-    void setProjectDescription(const std::string& description);
+    void setProjectDescription(const std::string& description) override;
     
     /**
      * @brief Get video format
      */
-    VideoFormat getVideoFormat() const;
+    VideoFormat getVideoFormat() const override;
     
     /**
      * @brief Set video format
      */
-    void setVideoFormat(VideoFormat format);
+    void setVideoFormat(VideoFormat format) override;
     
     /**
      * @brief Get source format
      */
-    SourceType getSourceFormat() const;
+    SourceType getSourceFormat() const override {
+        return getSourceType();
+    }
     
     /**
      * @brief Set source format
      */
-    void setSourceFormat(SourceType source);
+    void setSourceFormat(SourceType source) override {
+        setSourceType(source);
+    }
     
     /**
      * @brief Create a snapshot copy of the project
      * @return Shared pointer to immutable project copy (opaque handle)
      */
-    std::shared_ptr<const void> createSnapshot() const;
+    std::shared_ptr<const void> createSnapshot() const override;
     
     /**
      * @brief Get source type
      */
-    SourceType getSourceType() const;
+    SourceType getSourceType() const override;
     
     /**
      * @brief Set source type
      */
-    void setSourceType(SourceType source);
+    void setSourceType(SourceType source) override;
     
     // === DAG Management ===
     
@@ -273,14 +217,14 @@ public:
      * @param y_position Y coordinate
      * @return NodeID of created node
      */
-    NodeID addNode(const std::string& stage_name, double x_position, double y_position);
+    NodeID addNode(const std::string& stage_name, double x_position, double y_position) override;
     
     /**
      * @brief Remove a node from the project
      * @param node_id Node to remove
      * @return true on success
      */
-    bool removeNode(NodeID node_id);
+    bool removeNode(NodeID node_id) override;
     
     /**
      * @brief Check if a node can be removed
@@ -288,64 +232,78 @@ public:
      * @param reason Output parameter for reason if cannot remove
      * @return true if can remove
      */
-    bool canRemoveNode(NodeID node_id, std::string* reason = nullptr) const;
+    bool canRemoveNode(NodeID node_id, std::string* reason = nullptr) const override;
     
     /**
      * @brief Set node position
      */
-    void setNodePosition(NodeID node_id, double x, double y);
+    void setNodePosition(NodeID node_id, double x, double y) override;
     
     /**
      * @brief Set node label
      */
-    void setNodeLabel(NodeID node_id, const std::string& label);
+    void setNodeLabel(NodeID node_id, const std::string& label) override;
     
     /**
      * @brief Set node parameters
      * @param node_id Node to configure
      * @param parameters Map of parameter name -> value
      */
-    void setNodeParameters(NodeID node_id, const std::map<std::string, std::string>& parameters);
+    void setNodeParameters(NodeID node_id, const std::map<std::string, std::string>& parameters) override;
     
     /**
      * @brief Add an edge between two nodes
      * @param source_node Source node
      * @param target_node Target node
      */
-    void addEdge(NodeID source_node, NodeID target_node);
+    void addEdge(NodeID source_node, NodeID target_node) override;
     
     /**
      * @brief Remove an edge
      */
-    void removeEdge(NodeID source_node, NodeID target_node);
+    void removeEdge(NodeID source_node, NodeID target_node) override;
     
     /**
      * @brief Get all nodes in the project
      */
-    std::vector<NodeInfo> getNodes() const;
+    std::vector<NodeInfo> getNodes() const override;
     
     /**
      * @brief Get the first node in the DAG (if any)
      * @return NodeID of first node, or invalid NodeID if no nodes
      */
-    NodeID getFirstNode() const;
+    NodeID getFirstNode() const override;
     
     /**
      * @brief Check if a node exists in the project
      * @param node_id Node to check
      * @return true if node exists
      */
-    bool hasNode(NodeID node_id) const;
+    bool hasNode(NodeID node_id) const override;
     
     /**
      * @brief Get all edges in the project
      */
-    std::vector<EdgeInfo> getEdges() const;
+    std::vector<EdgeInfo> getEdges() const override;
     
     /**
      * @brief Get information about a specific node
      */
-    NodeInfo getNodeInfo(NodeID node_id) const;
+    NodeInfo getNodeInfo(NodeID node_id) const override;
+
+    // Interface-friendly stage registry wrappers
+    std::vector<StageInfo> listAvailableStagesForFormat(VideoFormat format) const override {
+        return getAvailableStages(format);
+    }
+    std::vector<StageInfo> listAllStages() const override {
+        return ProjectPresenter::getAllStages();
+    }
+    bool stageExists(const std::string& stage_name) const override {
+        return ProjectPresenter::hasStage(stage_name);
+    }
+    std::shared_ptr<void> instantiateStage(const std::string& stage_name) const override {
+        return ProjectPresenter::createStageInstance(stage_name);
+    }
     
     // === Stage Registry ===
     
@@ -373,7 +331,7 @@ public:
      * @param node_id Node to get stage for
      * @return Stage instance or nullptr if not found
      */
-    std::shared_ptr<void> getStageForInspection(NodeID node_id) const;
+    std::shared_ptr<void> getStageForInspection(NodeID node_id) const override;
     
     /**
      * @brief Get stage instance for parameter editing
@@ -390,7 +348,7 @@ public:
      * @param reason Output parameter for reason if cannot trigger
      * @return true if can trigger
      */
-    bool canTriggerNode(NodeID node_id, std::string* reason = nullptr) const;
+    bool canTriggerNode(NodeID node_id, std::string* reason = nullptr) const override;
     
     /**
      * @brief Trigger batch processing for a node
@@ -398,7 +356,7 @@ public:
      * @param progress_callback Optional progress callback
      * @return true on success
      */
-    bool triggerNode(NodeID node_id, ProgressCallback progress_callback = nullptr);
+    bool triggerNode(NodeID node_id, ProgressCallback progress_callback = nullptr) override;
     
         /**
          * @brief Trigger all sink nodes in the project
@@ -408,7 +366,7 @@ public:
          * Finds all triggerable sink nodes in the project and executes them sequentially.
          * Progress callback is invoked for each sink node being processed.
          */
-        bool triggerAllSinks(ProgressCallback progress_callback = nullptr);
+        bool triggerAllSinks(ProgressCallback progress_callback = nullptr) override;
     
     // === Validation ===
     
@@ -416,12 +374,12 @@ public:
      * @brief Validate the project for errors
      * @return true if project is valid
      */
-    bool validateProject() const;
+    bool validateProject() const override;
     
     /**
      * @brief Get validation errors
      */
-    std::vector<std::string> getValidationErrors() const;
+    std::vector<std::string> getValidationErrors() const override;
     
     // === Stage Inspection ===
     
@@ -434,7 +392,7 @@ public:
      * and generates an inspection report. The report contains human-readable
      * information about the stage's current state and configuration.
      */
-    std::optional<StageInspectionView> getNodeInspection(NodeID node_id) const;
+    std::optional<StageInspectionView> getNodeInspection(NodeID node_id) const override;
     
     // === Project Snapshots ===
     
@@ -443,7 +401,7 @@ public:
      * @brief Get the current DAG for the project
      * @return Shared pointer to DAG (as void* for encapsulation)
      */
-    std::shared_ptr<void> getDAG() const;
+    std::shared_ptr<void> getDAG() const override;
     
     // === DAG Operations ===
     
@@ -454,7 +412,7 @@ public:
      * Rebuilds the executable DAG from the project graph.
      * Call this whenever the DAG structure changes (nodes/edges added/removed).
      */
-    std::shared_ptr<void> buildDAG();
+    std::shared_ptr<void> buildDAG() override;
     
     /**
      * @brief Validate DAG structure
@@ -462,7 +420,7 @@ public:
      * 
      * Checks for cycles, disconnected subgraphs, missing parameters, etc.
      */
-    bool validateDAG();
+    bool validateDAG() override;
     
     // === Parameter Operations ===
     
@@ -473,14 +431,14 @@ public:
      * 
      * Returns all parameters that can be configured for this stage type.
      */
-    std::vector<ParameterDescriptor> getStageParameters(const std::string& stage_name);
+    std::vector<ParameterDescriptor> getStageParameters(const std::string& stage_name) override;
     
     /**
      * @brief Get current parameters for a specific node
      * @param node_id Node to query
      * @return Map of parameter name -> current value
      */
-    std::map<std::string, ParameterValue> getNodeParameters(NodeID node_id);
+    std::map<std::string, ParameterValue> getNodeParameters(NodeID node_id) override;
     
     /**
      * @brief Set parameters for a specific node
@@ -490,7 +448,7 @@ public:
      * 
      * Updates the node's parameter values and marks project as modified.
      */
-    bool setNodeParameters(NodeID node_id, const std::map<std::string, ParameterValue>& params);
+    bool setNodeParameters(NodeID node_id, const std::map<std::string, ParameterValue>& params) override;
 
     /**
      * @brief Get raw project pointer for low-level access
@@ -507,7 +465,7 @@ public:
      * RenderPresenter that manage DAG lifecycle. The presenter retains ownership.
      * New GUI code should use presenter methods instead.
      */
-    void* getCoreProjectHandle() { 
+    void* getCoreProjectHandle() override {
         return external_project_ ? external_project_ : project_.get(); 
     }
 

@@ -12,7 +12,7 @@
 
 #include <QString>
 #include <memory>
-#include "presenters/include/project_presenter.h"
+#include "presenters/include/i_project_presenter.h"
 
 /**
  * @brief GUI wrapper around ProjectPresenter
@@ -24,6 +24,7 @@
 class GUIProject {
 public:
     GUIProject();
+    explicit GUIProject(std::unique_ptr<orc::presenters::IProjectPresenter> presenter);
     ~GUIProject();
     
     /// @name Project Metadata
@@ -79,8 +80,8 @@ public:
     
     /// @name Presenter Access
     /// @{
-    orc::presenters::ProjectPresenter* presenter() { return presenter_.get(); }  ///< Get mutable presenter
-    const orc::presenters::ProjectPresenter* presenter() const { return presenter_.get(); }  ///< Get const presenter
+    orc::presenters::IProjectPresenter* presenter() { return presenter_.get(); }  ///< Get mutable presenter
+    const orc::presenters::IProjectPresenter* presenter() const { return presenter_.get(); }  ///< Get const presenter
     
     /**
      * @brief Get the current DAG
@@ -100,7 +101,7 @@ public:
     
 private:
     QString project_path_;                                           // Path to .orcprj file
-    std::unique_ptr<orc::presenters::ProjectPresenter> presenter_;   // Presenter managing core project
+    std::unique_ptr<orc::presenters::IProjectPresenter> presenter_;  // Presenter managing core project
     mutable std::shared_ptr<void> dag_cache_;                        // Cached DAG for getDAG() (opaque handle)
 };
 

@@ -10,6 +10,7 @@
 #include "guiproject.h"
 #include <common_types.h>  // For VideoSystem, SourceType
 #include "logging.h"
+#include "presenters/include/i_project_presenter.h"
 #include "presenters/include/project_presenter.h"
 #include <QFileInfo>
 #include <algorithm>
@@ -19,6 +20,14 @@
 GUIProject::GUIProject()
     : presenter_(std::make_unique<orc::presenters::ProjectPresenter>())
 {
+}
+
+GUIProject::GUIProject(std::unique_ptr<orc::presenters::IProjectPresenter> presenter)
+    : presenter_(std::move(presenter))
+{
+    if (!presenter_) {
+        presenter_ = std::make_unique<orc::presenters::ProjectPresenter>();
+    }
 }
 
 GUIProject::~GUIProject() = default;
@@ -48,8 +57,12 @@ void GUIProject::setModified(bool modified)
 bool GUIProject::newEmptyProject(const QString& project_name, orc::presenters::VideoFormat video_format, orc::presenters::SourceType source_format, QString* error)
 {
     try {
-        // Create new presenter with empty project
-        presenter_ = std::make_unique<orc::presenters::ProjectPresenter>();
+        if (!presenter_) {
+            presenter_ = std::make_unique<orc::presenters::ProjectPresenter>();
+        }
+
+        // Reset to empty project using the presenter seam
+        presenter_->clearProject();
         
         // Set project metadata
         presenter_->setProjectName(project_name.toStdString());
@@ -91,8 +104,13 @@ bool GUIProject::loadFromFile(const QString& path, QString* error)
     try {
         ORC_LOG_DEBUG("Loading project from: {}", path.toStdString());
         
-        // Create new presenter and load project
-        presenter_ = std::make_unique<orc::presenters::ProjectPresenter>(path.toStdString());
+        if (!presenter_) {
+            presenter_ = std::make_unique<orc::presenters::ProjectPresenter>();
+        }
+
+        if (!presenter_->loadProject(path.toStdString())) {
+            throw std::runtime_error("Failed to load project from file");
+        }
         project_path_ = path;
         
         ORC_LOG_DEBUG("Building DAG from project");
@@ -116,7 +134,11 @@ bool GUIProject::loadFromFile(const QString& path, QString* error)
 
 void GUIProject::clear()
 {
-    presenter_ = std::make_unique<orc::presenters::ProjectPresenter>();
+    if (!presenter_) {
+        presenter_ = std::make_unique<orc::presenters::ProjectPresenter>();
+    }
+    presenter_->clearProject();
+    presenter_->clearModifiedFlag();
     dag_cache_.reset();
     project_path_.clear();
 }
@@ -126,7 +148,7 @@ bool GUIProject::hasSource() const
     if (!presenter_) return false;
     
     auto nodes = presenter_->getNodes();
-    auto all_stages = orc::presenters::ProjectPresenter::getAllStages();
+    auto all_stages = presenter_->listAllStages();
     
     return std::any_of(nodes.begin(), nodes.end(), 
         [&all_stages](const auto& node) {
@@ -141,7 +163,7 @@ QString GUIProject::getSourceName() const
     if (!presenter_) return QString();
     
     auto nodes = presenter_->getNodes();
-    auto all_stages = orc::presenters::ProjectPresenter::getAllStages();
+    auto all_stages = presenter_->listAllStages();
     
     for (const auto& node : nodes) {
         auto stage_it = std::find_if(all_stages.begin(), all_stages.end(),

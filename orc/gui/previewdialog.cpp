@@ -87,11 +87,7 @@ PreviewDialog::PreviewDialog(QWidget *parent)
         if (!tweak_node_id_.is_valid() || tweak_widgets_.empty()) {
             return;
         }
-        // Collect current values and emit – tweak_class updated per changed widget
-        // Use DecodePhase as safe default when emitting from timer (we don't track
-        // which widget changed last; the per-widget connection does that).
-        emit tweakParameterChanged(tweak_node_id_, collectTweakValues(),
-                                   orc::LiveTweakClass::DecodePhase);
+        emit tweakParameterChanged(tweak_node_id_, collectTweakValues(), last_tweak_class_);
     });
 
     setupUI();
@@ -694,8 +690,8 @@ void PreviewDialog::buildTweakPanel(
                 const std::string pname = desc.name;
                 const orc::LiveTweakClass tc = tweak.tweak_class;
                 connect(spin, QOverload<int>::of(&QSpinBox::valueChanged), [this, pname, tc](int) {
-                    tweak_debounce_timer_->stop();
-                    emit tweakParameterChanged(tweak_node_id_, collectTweakValues(), tc);
+                    last_tweak_class_ = tc;
+                    tweak_debounce_timer_->start();
                 });
                 break;
             }
@@ -713,8 +709,8 @@ void PreviewDialog::buildTweakPanel(
                 const std::string pname = desc.name;
                 const orc::LiveTweakClass tc = tweak.tweak_class;
                 connect(spin, QOverload<int>::of(&QSpinBox::valueChanged), [this, pname, tc](int) {
-                    tweak_debounce_timer_->stop();
-                    emit tweakParameterChanged(tweak_node_id_, collectTweakValues(), tc);
+                    last_tweak_class_ = tc;
+                    tweak_debounce_timer_->start();
                 });
                 break;
             }
@@ -734,8 +730,8 @@ void PreviewDialog::buildTweakPanel(
                 const std::string pname = desc.name;
                 const orc::LiveTweakClass tc = tweak.tweak_class;
                 connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, pname, tc](double) {
-                    tweak_debounce_timer_->stop();
-                    emit tweakParameterChanged(tweak_node_id_, collectTweakValues(), tc);
+                    last_tweak_class_ = tc;
+                    tweak_debounce_timer_->start();
                 });
                 break;
             }
@@ -746,8 +742,8 @@ void PreviewDialog::buildTweakPanel(
                 const std::string pname = desc.name;
                 const orc::LiveTweakClass tc = tweak.tweak_class;
                 connect(check, &QCheckBox::toggled, [this, pname, tc](bool) {
-                    tweak_debounce_timer_->stop();
-                    emit tweakParameterChanged(tweak_node_id_, collectTweakValues(), tc);
+                    last_tweak_class_ = tc;
+                    tweak_debounce_timer_->start();
                 });
                 break;
             }
@@ -762,8 +758,8 @@ void PreviewDialog::buildTweakPanel(
                     const std::string pname = desc.name;
                     const orc::LiveTweakClass tc = tweak.tweak_class;
                     connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, pname, tc](int) {
-                        tweak_debounce_timer_->stop();
-                        emit tweakParameterChanged(tweak_node_id_, collectTweakValues(), tc);
+                        last_tweak_class_ = tc;
+                        tweak_debounce_timer_->start();
                     });
                 }
                 // Free-form strings and FILE_PATH are not shown in the tweak panel

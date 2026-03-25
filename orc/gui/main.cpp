@@ -210,6 +210,9 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
 
+    // Ensure resources from orc-gui-lib are registered when linked statically.
+    Q_INIT_RESOURCE(orc_gui_resources);
+
     app.setApplicationName("orc-gui");
     app.setApplicationVersion(ORC_VERSION);
     app.setOrganizationName("domesday86");

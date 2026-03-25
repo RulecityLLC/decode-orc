@@ -928,13 +928,17 @@ bool RenderPresenter::applyStageParameters(
     NodeID node_id,
     const std::map<std::string, ParameterValue>& params)
 {
-    auto dag = impl_->getConcreteDAG();
+    auto dag = std::static_pointer_cast<orc::DAG>(impl_->dag_void_);
     if (!dag) {
         ORC_LOG_WARN("RenderPresenter::applyStageParameters: no DAG");
         return false;
     }
 
-    for (const auto& node : dag->nodes()) {
+    // Live preview execution paths pass DAGNode::parameters back into stage::execute().
+    // Keep DAG node parameters in sync with the applied live tweaks so execute()
+    // does not immediately overwrite stage state with stale persisted values.
+    auto& dag_nodes = const_cast<std::vector<orc::DAGNode>&>(dag->nodes());
+    for (auto& node : dag_nodes) {
         if (node.node_id == node_id) {
             auto* param_stage = dynamic_cast<orc::ParameterizedStage*>(node.stage.get());
             if (!param_stage) {
@@ -946,6 +950,9 @@ bool RenderPresenter::applyStageParameters(
             ORC_LOG_DEBUG("RenderPresenter::applyStageParameters: node '{}' set_parameters -> {}",
                           node_id.to_string(), ok);
             if (ok) {
+                for (const auto& [key, value] : params) {
+                    node.parameters[key] = value;
+                }
                 impl_->invalidateRenderCachesForNode(node_id);
             }
             return ok;

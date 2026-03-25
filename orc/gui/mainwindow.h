@@ -162,6 +162,7 @@ private slots:
     void onBurstLevelProgress(size_t current, size_t total, QString message);
     void onTriggerProgress(size_t current, size_t total, QString message);
     void onTriggerComplete(uint64_t request_id, bool success, QString status);
+    void onStageParametersApplied(uint64_t request_id, bool success);
     void onCoordinatorError(uint64_t request_id, QString message);
     void onAbout();
 

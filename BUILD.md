@@ -222,7 +222,7 @@ The project follows this CMake structure:
 - **`orc/view-types/`** — Shared data structures for presentation
 - **`orc/cli/`** — CLI application
 - **`orc/gui/`** — Qt6 GUI application (optional)
-- **`orc-unit-tests/`** — Unit test suite (compiled when `BUILD_UNIT_TESTS=ON`)
+- **`orc-tests/`** — Unified test tree with source-aligned subdirectories such as `core/unit/` and `gui/unit/`
 
 MVP architecture boundaries are enforced via `ctest -R MVPArchitectureCheck`. See [TESTING.md](TESTING.md) for testing strategy details.
 
