@@ -20,18 +20,33 @@
 namespace orc::gui {
 
 constexpr int kVectorscopeCanvasSize = 1024;
+constexpr int kVectorscopePlotPadding = 16;
+constexpr int kVectorscopeCircleStrokeWidth = 4;
+constexpr int kVectorscopeAxisStrokeWidth = 2;
+constexpr int kVectorscopeMajorMarkerStrokeWidth = 2;
+constexpr int kVectorscopeMinorMarkerStrokeWidth = 1;
 constexpr double kVectorscopeSignedFullScale = 32768.0;
 constexpr double kVectorscopeUvRange = kVectorscopeSignedFullScale * 2.0;
 constexpr double kNtscDisplayTargetUScale = 1.3227191001249037;
 constexpr double kNtscDisplayTargetVScale = 0.8432371875310065;
 
+inline double standardDegreesToScopeRadians(double standard_degrees)
+{
+    // Standard vectorscope degrees are counterclockwise (0=right, 90=up).
+    // This renderer uses clockwise-positive angles for screen mapping.
+    return (-standard_degrees * M_PI) / 180.0;
+}
+
 struct VectorscopePlotGeometry {
     explicit VectorscopePlotGeometry(int canvas_size_pixels = kVectorscopeCanvasSize)
         : canvas_size(canvas_size_pixels)
-        , pixels_per_uv_unit(static_cast<double>(canvas_size_pixels) / kVectorscopeUvRange)
-        , plot_area(0.0, 0.0,
-                    static_cast<double>(canvas_size_pixels),
-                    static_cast<double>(canvas_size_pixels))
+        , plot_padding(std::min(kVectorscopePlotPadding, canvas_size_pixels / 4))
+        , plot_span_pixels(static_cast<double>(canvas_size_pixels - (plot_padding * 2)))
+        , pixels_per_uv_unit(plot_span_pixels / kVectorscopeUvRange)
+        , plot_area(static_cast<double>(plot_padding),
+                    static_cast<double>(plot_padding),
+                    plot_span_pixels,
+                    plot_span_pixels)
         , centre_point(plot_area.center())
     {
     }
@@ -52,12 +67,27 @@ struct VectorscopePlotGeometry {
         );
     }
 
+    QPointF pointFromStandardDegrees(double standard_degrees, double magnitude_uv) const
+    {
+        return pointFromVectorscopeAngle(
+            standardDegreesToScopeRadians(standard_degrees),
+            magnitude_uv
+        );
+    }
+
     double magnitudeToPixels(double magnitude_uv) const
     {
         return magnitude_uv * pixels_per_uv_unit;
     }
 
+    double pixelsToMagnitude(double magnitude_pixels) const
+    {
+        return magnitude_pixels / pixels_per_uv_unit;
+    }
+
     int canvas_size;
+    int plot_padding;
+    double plot_span_pixels;
     double pixels_per_uv_unit;
     QRectF plot_area;
     QPointF centre_point;

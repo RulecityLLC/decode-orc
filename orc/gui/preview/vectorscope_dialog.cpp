@@ -33,6 +33,7 @@ public:
 #include <QSizePolicy>
 #include <QPixmap>
 #include <QPainter>
+#include <QPainterPath>
 #include <QCloseEvent>
 #include <QResizeEvent>
 #include <cmath>
@@ -40,10 +41,182 @@ public:
 
 namespace {
 
+constexpr double kMajorMarkerLengthPixels = 18.0;
+constexpr double kMinorMarkerLengthPixels = 10.0;
+constexpr double kIqLabelOffsetPixels = 22.0;
+constexpr double kColorLabelOffsetPixels = 48.0;
+// Scope-angle convention in this renderer: +degrees rotate clockwise on screen.
+// Keep these in standard vectorscope degrees (0=right, 90=up, counterclockwise).
+constexpr double kNtscIAxisStandardDegrees = 147.0;
+constexpr double kNtscNegIAxisStandardDegrees = -33.0;
+constexpr double kNtscQAxisStandardDegrees = 57.0;
+constexpr double kNtscNegQAxisStandardDegrees = -123.0;
+constexpr double kIqLabelAngularOffsetDegrees = 4.0;
+constexpr double kZoneHalfAngleDegrees = 13.0;
+constexpr double kZoneHalfRadialSpanPercent = 0.14;
+constexpr double kTargetBoxSizePixels = 42.0;
+constexpr double kTargetCrosshairSizePixels = 22.0;
+
 bool isPointWithinCanvas(const QPointF& point, int canvas_size)
 {
     return point.x() >= 0.0 && point.x() < static_cast<double>(canvas_size)
         && point.y() >= 0.0 && point.y() < static_cast<double>(canvas_size);
+}
+
+QColor vectorscopeTargetColor(int rgb)
+{
+    switch (rgb) {
+    case 1:
+        return QColor(70, 150, 255, 120);
+    case 2:
+        return QColor(70, 230, 120, 120);
+    case 3:
+        return QColor(90, 235, 235, 120);
+    case 4:
+        return QColor(255, 90, 90, 120);
+    case 5:
+        return QColor(230, 90, 230, 120);
+    case 6:
+        return QColor(245, 215, 80, 120);
+    default:
+        return QColor(255, 255, 255, 120);
+    }
+}
+
+void drawNtcsIqLabels(QPainter& painter, const orc::gui::VectorscopePlotGeometry& geometry)
+{
+    struct AxisLabel {
+        const char* text;
+        double angle_degrees;
+        double label_angle_offset_degrees;
+    };
+
+    const AxisLabel axis_labels[] = {
+        {"I", kNtscIAxisStandardDegrees, kIqLabelAngularOffsetDegrees},
+        {"Q", kNtscQAxisStandardDegrees, -kIqLabelAngularOffsetDegrees},
+        {"-I", kNtscNegIAxisStandardDegrees, -kIqLabelAngularOffsetDegrees},
+        {"-Q", kNtscNegQAxisStandardDegrees, kIqLabelAngularOffsetDegrees}
+    };
+
+    QFont font = painter.font();
+    font.setPointSize(24);
+    font.setBold(true);
+    painter.setFont(font);
+    painter.setPen(QPen(QColor(200, 200, 200), 1));
+
+    const double label_radius_uv = orc::gui::kVectorscopeSignedFullScale
+        - geometry.pixelsToMagnitude(kIqLabelOffsetPixels);
+
+    for (const auto& axis_label : axis_labels) {
+        const QPointF label_centre = geometry.pointFromStandardDegrees(
+            axis_label.angle_degrees + axis_label.label_angle_offset_degrees,
+            label_radius_uv
+        );
+        const QString text(axis_label.text);
+        const QFontMetrics metrics(font);
+        const QRect text_rect = metrics.boundingRect(text);
+
+        painter.drawText(
+            static_cast<int>(label_centre.x()) - (text_rect.width() / 2),
+            static_cast<int>(label_centre.y()) + (text_rect.height() / 3),
+            text
+        );
+    }
+}
+
+void drawReferenceAxis(QPainter& painter,
+                       const orc::gui::VectorscopePlotGeometry& geometry,
+                       double standard_angle_degrees)
+{
+    painter.drawLine(
+        geometry.pointFromStandardDegrees(standard_angle_degrees, 0.2 * orc::gui::kVectorscopeSignedFullScale),
+        geometry.pointFromStandardDegrees(standard_angle_degrees, orc::gui::kVectorscopeSignedFullScale)
+    );
+}
+
+void drawCircleMarkers(QPainter& painter, const orc::gui::VectorscopePlotGeometry& geometry)
+{
+    const double outer_radius_uv = orc::gui::kVectorscopeSignedFullScale;
+    const double major_marker_length_uv = geometry.pixelsToMagnitude(kMajorMarkerLengthPixels);
+    const double minor_marker_length_uv = geometry.pixelsToMagnitude(kMinorMarkerLengthPixels);
+
+    for (int degrees = 0; degrees < 360; degrees += 2) {
+        const bool is_major_marker = (degrees % 10) == 0;
+        const double marker_length_uv = is_major_marker ? major_marker_length_uv : minor_marker_length_uv;
+        const double angle_radians = (static_cast<double>(degrees) * M_PI) / 180.0;
+
+        painter.setPen(QPen(Qt::white,
+                            is_major_marker ? orc::gui::kVectorscopeMajorMarkerStrokeWidth
+                                            : orc::gui::kVectorscopeMinorMarkerStrokeWidth));
+        painter.drawLine(
+            geometry.pointFromVectorscopeAngle(angle_radians, outer_radius_uv - marker_length_uv),
+            geometry.pointFromVectorscopeAngle(angle_radians, outer_radius_uv)
+        );
+    }
+}
+
+void drawColorZone(QPainter& painter,
+                   const orc::gui::VectorscopePlotGeometry& geometry,
+                   double angle_radians,
+                   double magnitude_uv,
+                   const QColor& color)
+{
+    const double zone_half_angle_radians = (kZoneHalfAngleDegrees * M_PI) / 180.0;
+    const double radial_span_uv = magnitude_uv * kZoneHalfRadialSpanPercent;
+    const double inner_radius_uv = std::max(0.0, magnitude_uv - radial_span_uv);
+    const double outer_radius_uv = std::min(orc::gui::kVectorscopeSignedFullScale, magnitude_uv + radial_span_uv);
+
+    QPainterPath zone_path;
+    zone_path.moveTo(geometry.pointFromVectorscopeAngle(angle_radians - zone_half_angle_radians, inner_radius_uv));
+
+    for (int step = 0; step <= 12; ++step) {
+        const double t = static_cast<double>(step) / 12.0;
+        const double arc_angle = angle_radians - zone_half_angle_radians + (t * zone_half_angle_radians * 2.0);
+        zone_path.lineTo(geometry.pointFromVectorscopeAngle(arc_angle, outer_radius_uv));
+    }
+
+    for (int step = 12; step >= 0; --step) {
+        const double t = static_cast<double>(step) / 12.0;
+        const double arc_angle = angle_radians - zone_half_angle_radians + (t * zone_half_angle_radians * 2.0);
+        zone_path.lineTo(geometry.pointFromVectorscopeAngle(arc_angle, inner_radius_uv));
+    }
+
+    zone_path.closeSubpath();
+
+    QColor fill_color = color;
+    fill_color.setAlpha(52);
+    QColor outline_color = color;
+    outline_color.setAlpha(180);
+
+    painter.save();
+    painter.setPen(QPen(outline_color, 1));
+    painter.setBrush(fill_color);
+    painter.drawPath(zone_path);
+    painter.restore();
+}
+
+void drawTargetBox(QPainter& painter,
+                   const orc::gui::VectorscopePlotGeometry& geometry,
+                   const QPointF& centre,
+                   const QColor& color)
+{
+    const double half_box = kTargetBoxSizePixels / 2.0;
+    const double half_crosshair = kTargetCrosshairSizePixels / 2.0;
+    const QRectF box_rect(centre.x() - half_box, centre.y() - half_box,
+                          kTargetBoxSizePixels, kTargetBoxSizePixels);
+
+    QColor outline_color = color;
+    outline_color.setAlpha(220);
+
+    painter.save();
+    painter.setPen(QPen(outline_color, 2));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawRect(box_rect);
+    painter.drawLine(QPointF(centre.x() - half_crosshair, centre.y()),
+                     QPointF(centre.x() + half_crosshair, centre.y()));
+    painter.drawLine(QPointF(centre.x(), centre.y() - half_crosshair),
+                     QPointF(centre.x(), centre.y() + half_crosshair));
+    painter.restore();
 }
 
 } // namespace
@@ -100,7 +273,7 @@ VectorscopeDialog::VectorscopeDialog(QWidget *parent)
 {
     updateWindowTitle();
     setWindowFlags(Qt::Window);
-    resize(800, 900);
+    resize(1120, 900);
     
     setupUI();
     connectSignals();
@@ -444,23 +617,26 @@ void VectorscopeDialogPrivate::drawGraticule(QPainter& painter, VectorscopeDialo
     const orc::gui::VectorscopePlotGeometry geometry;
 
     painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.setPen(QPen(Qt::white, 1));
+    painter.setPen(QPen(Qt::white, orc::gui::kVectorscopeAxisStrokeWidth));
 
     painter.drawLine(QPointF(geometry.centre_point.x(), geometry.plot_area.top()),
                      QPointF(geometry.centre_point.x(), geometry.plot_area.bottom()));
     painter.drawLine(QPointF(geometry.plot_area.left(), geometry.centre_point.y()),
                      QPointF(geometry.plot_area.right(), geometry.centre_point.y()));
-    painter.drawRect(geometry.plot_area);
-    painter.drawEllipse(geometry.plot_area);
 
-    // NTSC I/Q axes only if system is NTSC
+    painter.setPen(QPen(Qt::white, orc::gui::kVectorscopeCircleStrokeWidth));
+    painter.drawEllipse(geometry.plot_area);
+    drawCircleMarkers(painter, geometry);
+
+    painter.setPen(QPen(Qt::white, orc::gui::kVectorscopeAxisStrokeWidth));
+
+    // NTSC keeps the full I/Q reference set and labels.
     if (system == orc::VideoSystem::NTSC) {
-        double theta = (-33.0 * M_PI) / 180.0;
-        for (int i = 0; i < 4; i++) {
-            painter.drawLine(geometry.pointFromVectorscopeAngle(theta, 0.2 * orc::gui::kVectorscopeSignedFullScale),
-                             geometry.pointFromVectorscopeAngle(theta, orc::gui::kVectorscopeSignedFullScale));
-            theta += M_PI / 2.0;
-        }
+        drawReferenceAxis(painter, geometry, kNtscIAxisStandardDegrees);
+        drawReferenceAxis(painter, geometry, kNtscNegIAxisStandardDegrees);
+        drawReferenceAxis(painter, geometry, kNtscQAxisStandardDegrees);
+        drawReferenceAxis(painter, geometry, kNtscNegQAxisStandardDegrees);
+        drawNtcsIqLabels(painter, geometry);
     }
 
     // 75% vs 100% targets scaling
@@ -482,37 +658,23 @@ void VectorscopeDialogPrivate::drawGraticule(QPainter& painter, VectorscopeDialo
                 const orc::UVSample target = orc::gui::vectorscopeDisplayTargetUv(rgb, percent, ireRange, system);
                 const double barTheta = std::atan2(-target.v, target.u);
                 const double barMagnitude = std::hypot(target.u, target.v);
+                const QPointF target_point = geometry.mapUV(target.u, target.v);
+                const QColor target_color = vectorscopeTargetColor(rgb);
 
-                // Grid around target: 10° and 10% steps
-                const double stepTheta = (10.0 * M_PI) / 180.0;
-                const double stepMagnitude = 0.1 * barMagnitude;
-
-                // Angle sweeps
-                for (int step = -1; step < 2; step++) {
-                    const double theta = barTheta + (step * stepTheta);
-                    painter.drawLine(
-                        geometry.pointFromVectorscopeAngle(theta, barMagnitude - stepMagnitude),
-                        geometry.pointFromVectorscopeAngle(theta, barMagnitude + stepMagnitude)
-                    );
-                }
-                // Magnitude sweeps
-                for (int step = -1; step < 2; step++) {
-                    const double magnitude = barMagnitude + (step * stepMagnitude);
-                    painter.drawLine(
-                        geometry.pointFromVectorscopeAngle(barTheta - stepTheta, magnitude),
-                        geometry.pointFromVectorscopeAngle(barTheta + stepTheta, magnitude)
-                    );
-                }
+                drawColorZone(painter, geometry, barTheta, barMagnitude, target_color);
+                drawTargetBox(painter, geometry, target_point, target_color);
                 
                 // Draw color label positioned just outside the target
-                const double label_distance = barMagnitude + (2.5 * stepMagnitude);
+                const double label_distance = barMagnitude + geometry.pixelsToMagnitude(kColorLabelOffsetPixels);
                 const QPointF label_position = geometry.pointFromVectorscopeAngle(barTheta, label_distance);
                 
                 QFont font = painter.font();
-                font.setPointSize(12);
+                font.setPointSize(14);
                 font.setBold(true);
                 painter.setFont(font);
-                painter.setPen(Qt::white);
+                QColor label_color = target_color;
+                label_color.setAlpha(255);
+                painter.setPen(QPen(label_color, orc::gui::kVectorscopeAxisStrokeWidth));
                 
                 // Center the text at the label position
                 QFontMetrics fm(font);
@@ -541,13 +703,15 @@ void VectorscopeDialog::clearDisplay() {
                              d_->last_data->white_16b_ire, d_->last_data->black_16b_ire);
         } else {
             const orc::gui::VectorscopePlotGeometry geometry;
-            painter.setPen(QPen(Qt::white, 1));
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            painter.setPen(QPen(Qt::white, orc::gui::kVectorscopeAxisStrokeWidth));
             painter.drawLine(QPointF(geometry.centre_point.x(), geometry.plot_area.top()),
                              QPointF(geometry.centre_point.x(), geometry.plot_area.bottom()));
             painter.drawLine(QPointF(geometry.plot_area.left(), geometry.centre_point.y()),
                              QPointF(geometry.plot_area.right(), geometry.centre_point.y()));
-            painter.drawRect(geometry.plot_area);
+            painter.setPen(QPen(Qt::white, orc::gui::kVectorscopeCircleStrokeWidth));
             painter.drawEllipse(geometry.plot_area);
+            drawCircleMarkers(painter, geometry);
         }
         painter.end();
     }
