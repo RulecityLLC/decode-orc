@@ -14,11 +14,22 @@
 #include <fstream>
 #include <utility>
 
+#include "analysis/vectorscope/vectorscope_analysis.h"
 #include "colour_preview_provider.h"
 #include "preview_renderer.h"
+#include "video_field_representation.h"
 
 namespace orc {
 namespace {
+
+constexpr const char* kLineScopeViewId = "preview.linescope";
+constexpr const char* kFieldTimingViewId = "preview.field_timing";
+
+bool is_generic_vfr_view_id(const std::string& view_id)
+{
+    return view_id == kLineScopeViewId
+    || view_id == kFieldTimingViewId;
+}
 
 const DAGNode* find_node(const DAG& dag, NodeID node_id)
 {
@@ -184,12 +195,29 @@ public:
             return result;
         }
 
-        if (!carrier_opt->vectorscope_data.has_value()) {
+        const bool active_area_only = coordinate.vectorscope_active_area_only;
+        if (active_area_only && carrier_opt->vectorscope_data.has_value()) {
+            last_vectorscope_ = carrier_opt->vectorscope_data;
+        } else {
+            const uint64_t field_number = carrier_opt->vectorscope_data.has_value()
+                ? carrier_opt->vectorscope_data->field_number
+                : coordinate.field_index;
+
+            last_vectorscope_ = VectorscopeAnalysisTool::extractFromColourFrameCarrier(
+                *carrier_opt,
+                field_number,
+                4,
+                active_area_only);
+        }
+
+        if (!last_vectorscope_.has_value() || last_vectorscope_->samples.empty()) {
             result.error_message = "Vectorscope data is not available for requested frame";
             return result;
         }
 
-        last_vectorscope_ = carrier_opt->vectorscope_data;
+        last_vectorscope_->system = carrier_opt->system;
+        last_vectorscope_->white_16b_ire = static_cast<int32_t>(carrier_opt->white_16b_ire);
+        last_vectorscope_->black_16b_ire = static_cast<int32_t>(carrier_opt->black_16b_ire);
 
         result.success = true;
         result.payload_kind = PreviewViewPayloadKind::Vectorscope;
@@ -238,6 +266,47 @@ private:
     const DAG* dag_{nullptr};
     NodeID node_id_;
     std::optional<VectorscopeData> last_vectorscope_;
+};
+
+class GenericVfrVisualizationPreviewView final : public IPreviewView {
+public:
+    explicit GenericVfrVisualizationPreviewView(std::string visualization_name)
+        : visualization_name_(std::move(visualization_name))
+    {
+    }
+
+    std::vector<VideoDataType> supported_data_types() const override
+    {
+        return {
+            VideoDataType::CompositeNTSC,
+            VideoDataType::CompositePAL,
+            VideoDataType::YC_NTSC,
+            VideoDataType::YC_PAL,
+            VideoDataType::ColourNTSC,
+            VideoDataType::ColourPAL,
+        };
+    }
+
+    PreviewViewDataResult request_data(
+        VideoDataType,
+        const PreviewCoordinate&) override
+    {
+        PreviewViewDataResult result{};
+        result.error_message = visualization_name_ + " is driven by dedicated requests and has no direct preview payload";
+        return result;
+    }
+
+    PreviewViewExportResult export_as(
+        const std::string&,
+        const std::string&) const override
+    {
+        PreviewViewExportResult result{};
+        result.error_message = visualization_name_ + " does not support export via preview view registry";
+        return result;
+    }
+
+private:
+    std::string visualization_name_;
 };
 
 } // namespace
@@ -303,12 +372,21 @@ std::vector<PreviewViewDescriptor> PreviewViewRegistry::get_applicable_views(
 {
     std::vector<PreviewViewDescriptor> result;
 
-    if (!node_supports_data_type(dag, node_id, data_type)) {
+    const DAGNode* node = find_node(dag, node_id);
+    if (!node || !node->stage) {
         return result;
     }
 
+    const bool supports_stage_data_type = node_supports_data_type(dag, node_id, data_type);
+
     for (const auto& entry : entries_) {
-        if (contains_data_type(entry.second.descriptor.supported_data_types, data_type)) {
+        if (is_generic_vfr_view_id(entry.second.descriptor.id)) {
+            result.push_back(entry.second.descriptor);
+            continue;
+        }
+
+        if (contains_data_type(entry.second.descriptor.supported_data_types, data_type)
+            && supports_stage_data_type) {
             result.push_back(entry.second.descriptor);
         }
     }
@@ -329,8 +407,9 @@ PreviewViewDataResult PreviewViewRegistry::request_data(
 {
     PreviewViewDataResult result{};
 
-    if (!node_supports_data_type(dag, node_id, data_type)) {
-        result.error_message = "Requested data type is not supported by the stage";
+    const DAGNode* node = find_node(dag, node_id);
+    if (!node || !node->stage) {
+        result.error_message = "Target node not found";
         return result;
     }
 
@@ -340,9 +419,16 @@ PreviewViewDataResult PreviewViewRegistry::request_data(
         return result;
     }
 
-    if (!contains_data_type(entry_it->second.descriptor.supported_data_types, data_type)) {
-        result.error_message = "Preview view does not support requested data type";
-        return result;
+    if (!is_generic_vfr_view_id(view_id)) {
+        if (!contains_data_type(entry_it->second.descriptor.supported_data_types, data_type)) {
+            result.error_message = "Preview view does not support requested data type";
+            return result;
+        }
+
+        if (!node_supports_data_type(dag, node_id, data_type)) {
+            result.error_message = "Requested data type is not supported by the stage";
+            return result;
+        }
     }
 
     NodeViewKey key{node_id, view_id};
@@ -423,6 +509,41 @@ void PreviewViewRegistry::register_default_views(
         [dag](NodeID node_id) {
             return std::make_unique<VectorscopePreviewView>(dag.get(), node_id);
         });
+
+    registry.register_view(
+        PreviewViewDescriptor{
+            kLineScopeViewId,
+            "Line Scope",
+            {
+                VideoDataType::CompositeNTSC,
+                VideoDataType::CompositePAL,
+                VideoDataType::YC_NTSC,
+                VideoDataType::YC_PAL,
+                VideoDataType::ColourNTSC,
+                VideoDataType::ColourPAL,
+            },
+        },
+        [](NodeID) {
+            return std::make_unique<GenericVfrVisualizationPreviewView>("Line scope");
+        });
+
+    registry.register_view(
+        PreviewViewDescriptor{
+            kFieldTimingViewId,
+            "Field Timing",
+            {
+                VideoDataType::CompositeNTSC,
+                VideoDataType::CompositePAL,
+                VideoDataType::YC_NTSC,
+                VideoDataType::YC_PAL,
+                VideoDataType::ColourNTSC,
+                VideoDataType::ColourPAL,
+            },
+        },
+        [](NodeID) {
+            return std::make_unique<GenericVfrVisualizationPreviewView>("Field timing");
+        });
+
 }
 
 size_t PreviewViewRegistry::NodeViewKeyHash::operator()(const NodeViewKey& key) const

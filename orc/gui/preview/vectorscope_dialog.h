@@ -62,7 +62,9 @@ public:
     explicit VectorscopeDialog(QWidget *parent = nullptr);
     ~VectorscopeDialog() override;
     
+    void setScopeLabel(const QString& scope_label);
     void setStage(orc::NodeID node_id);
+    bool isActiveAreaOnly() const;
     
     /**
      * @brief Update vectorscope with new data
@@ -83,6 +85,7 @@ public:
 
 Q_SIGNALS:
     void closed();
+    void dataRefreshRequested();
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -94,6 +97,7 @@ private slots:
     void onGraticuleChanged();
     void onDrawLinesToggled();
     void onPointSizeChanged();
+    void onActiveAreaOnlyToggled();
 
 private:
     friend class VectorscopeDialogPrivate;
@@ -101,6 +105,7 @@ private:
     void setupUI();
     void connectSignals();
     int getGraticuleMode() const;
+    void updateWindowTitle();
     
     // Pimpl - hides core types from header
     std::unique_ptr<VectorscopeDialogPrivate> d_;
@@ -113,6 +118,7 @@ private:
     QCheckBox* blend_color_checkbox_;
     QCheckBox* defocus_checkbox_;
     QCheckBox* draw_lines_checkbox_;
+    QCheckBox* active_area_only_checkbox_;
     QSpinBox* point_size_spinbox_;
     
     // Field selection options

@@ -10,6 +10,7 @@
 #include "vectorscope_dialog.h"
 #include "../field_frame_presentation.h"
 #include "../logging.h"
+#include "vectorscope_geometry.h"
 
 // ============================================================================
 // Private Implementation - Simple state, no core access
@@ -17,6 +18,7 @@
 class VectorscopeDialogPrivate {
 public:
     orc::NodeID node_id;
+    QString scope_label{"Vectorscope"};
     uint64_t current_field_number = 0;
     std::optional<orc::VectorscopeData> last_data;
     
@@ -31,10 +33,193 @@ public:
 #include <QSizePolicy>
 #include <QPixmap>
 #include <QPainter>
+#include <QPainterPath>
 #include <QCloseEvent>
 #include <QResizeEvent>
 #include <cmath>
 #include <random>
+
+namespace {
+
+constexpr double kMajorMarkerLengthPixels = 18.0;
+constexpr double kMinorMarkerLengthPixels = 10.0;
+constexpr double kIqLabelOffsetPixels = 22.0;
+constexpr double kColorLabelOffsetPixels = 48.0;
+// Scope-angle convention in this renderer: +degrees rotate clockwise on screen.
+// Keep these in standard vectorscope degrees (0=right, 90=up, counterclockwise).
+constexpr double kNtscIAxisStandardDegrees = 147.0;
+constexpr double kNtscNegIAxisStandardDegrees = -33.0;
+constexpr double kNtscQAxisStandardDegrees = 57.0;
+constexpr double kNtscNegQAxisStandardDegrees = -123.0;
+constexpr double kIqLabelAngularOffsetDegrees = 4.0;
+constexpr double kZoneHalfAngleDegrees = 13.0;
+constexpr double kZoneHalfRadialSpanPercent = 0.14;
+constexpr double kTargetBoxSizePixels = 42.0;
+constexpr double kTargetCrosshairSizePixels = 22.0;
+
+bool isPointWithinCanvas(const QPointF& point, int canvas_size)
+{
+    return point.x() >= 0.0 && point.x() < static_cast<double>(canvas_size)
+        && point.y() >= 0.0 && point.y() < static_cast<double>(canvas_size);
+}
+
+QColor vectorscopeTargetColor(int rgb)
+{
+    switch (rgb) {
+    case 1:
+        return QColor(70, 150, 255, 120);
+    case 2:
+        return QColor(70, 230, 120, 120);
+    case 3:
+        return QColor(90, 235, 235, 120);
+    case 4:
+        return QColor(255, 90, 90, 120);
+    case 5:
+        return QColor(230, 90, 230, 120);
+    case 6:
+        return QColor(245, 215, 80, 120);
+    default:
+        return QColor(255, 255, 255, 120);
+    }
+}
+
+void drawNtcsIqLabels(QPainter& painter, const orc::gui::VectorscopePlotGeometry& geometry)
+{
+    struct AxisLabel {
+        const char* text;
+        double angle_degrees;
+        double label_angle_offset_degrees;
+    };
+
+    const AxisLabel axis_labels[] = {
+        {"I", kNtscIAxisStandardDegrees, kIqLabelAngularOffsetDegrees},
+        {"Q", kNtscQAxisStandardDegrees, -kIqLabelAngularOffsetDegrees},
+        {"-I", kNtscNegIAxisStandardDegrees, -kIqLabelAngularOffsetDegrees},
+        {"-Q", kNtscNegQAxisStandardDegrees, kIqLabelAngularOffsetDegrees}
+    };
+
+    QFont font = painter.font();
+    font.setPointSize(24);
+    font.setBold(true);
+    painter.setFont(font);
+    painter.setPen(QPen(QColor(200, 200, 200), 1));
+
+    const double label_radius_uv = orc::gui::kVectorscopeSignedFullScale
+        - geometry.pixelsToMagnitude(kIqLabelOffsetPixels);
+
+    for (const auto& axis_label : axis_labels) {
+        const QPointF label_centre = geometry.pointFromStandardDegrees(
+            axis_label.angle_degrees + axis_label.label_angle_offset_degrees,
+            label_radius_uv
+        );
+        const QString text(axis_label.text);
+        const QFontMetrics metrics(font);
+        const QRect text_rect = metrics.boundingRect(text);
+
+        painter.drawText(
+            static_cast<int>(label_centre.x()) - (text_rect.width() / 2),
+            static_cast<int>(label_centre.y()) + (text_rect.height() / 3),
+            text
+        );
+    }
+}
+
+void drawReferenceAxis(QPainter& painter,
+                       const orc::gui::VectorscopePlotGeometry& geometry,
+                       double standard_angle_degrees)
+{
+    painter.drawLine(
+        geometry.pointFromStandardDegrees(standard_angle_degrees, 0.2 * orc::gui::kVectorscopeSignedFullScale),
+        geometry.pointFromStandardDegrees(standard_angle_degrees, orc::gui::kVectorscopeSignedFullScale)
+    );
+}
+
+void drawCircleMarkers(QPainter& painter, const orc::gui::VectorscopePlotGeometry& geometry)
+{
+    const double outer_radius_uv = orc::gui::kVectorscopeSignedFullScale;
+    const double major_marker_length_uv = geometry.pixelsToMagnitude(kMajorMarkerLengthPixels);
+    const double minor_marker_length_uv = geometry.pixelsToMagnitude(kMinorMarkerLengthPixels);
+
+    for (int degrees = 0; degrees < 360; degrees += 2) {
+        const bool is_major_marker = (degrees % 10) == 0;
+        const double marker_length_uv = is_major_marker ? major_marker_length_uv : minor_marker_length_uv;
+        const double angle_radians = (static_cast<double>(degrees) * M_PI) / 180.0;
+
+        painter.setPen(QPen(Qt::white,
+                            is_major_marker ? orc::gui::kVectorscopeMajorMarkerStrokeWidth
+                                            : orc::gui::kVectorscopeMinorMarkerStrokeWidth));
+        painter.drawLine(
+            geometry.pointFromVectorscopeAngle(angle_radians, outer_radius_uv - marker_length_uv),
+            geometry.pointFromVectorscopeAngle(angle_radians, outer_radius_uv)
+        );
+    }
+}
+
+void drawColorZone(QPainter& painter,
+                   const orc::gui::VectorscopePlotGeometry& geometry,
+                   double angle_radians,
+                   double magnitude_uv,
+                   const QColor& color)
+{
+    const double zone_half_angle_radians = (kZoneHalfAngleDegrees * M_PI) / 180.0;
+    const double radial_span_uv = magnitude_uv * kZoneHalfRadialSpanPercent;
+    const double inner_radius_uv = std::max(0.0, magnitude_uv - radial_span_uv);
+    const double outer_radius_uv = std::min(orc::gui::kVectorscopeSignedFullScale, magnitude_uv + radial_span_uv);
+
+    QPainterPath zone_path;
+    zone_path.moveTo(geometry.pointFromVectorscopeAngle(angle_radians - zone_half_angle_radians, inner_radius_uv));
+
+    for (int step = 0; step <= 12; ++step) {
+        const double t = static_cast<double>(step) / 12.0;
+        const double arc_angle = angle_radians - zone_half_angle_radians + (t * zone_half_angle_radians * 2.0);
+        zone_path.lineTo(geometry.pointFromVectorscopeAngle(arc_angle, outer_radius_uv));
+    }
+
+    for (int step = 12; step >= 0; --step) {
+        const double t = static_cast<double>(step) / 12.0;
+        const double arc_angle = angle_radians - zone_half_angle_radians + (t * zone_half_angle_radians * 2.0);
+        zone_path.lineTo(geometry.pointFromVectorscopeAngle(arc_angle, inner_radius_uv));
+    }
+
+    zone_path.closeSubpath();
+
+    QColor fill_color = color;
+    fill_color.setAlpha(52);
+    QColor outline_color = color;
+    outline_color.setAlpha(180);
+
+    painter.save();
+    painter.setPen(QPen(outline_color, 1));
+    painter.setBrush(fill_color);
+    painter.drawPath(zone_path);
+    painter.restore();
+}
+
+void drawTargetBox(QPainter& painter,
+                   const orc::gui::VectorscopePlotGeometry& geometry,
+                   const QPointF& centre,
+                   const QColor& color)
+{
+    const double half_box = kTargetBoxSizePixels / 2.0;
+    const double half_crosshair = kTargetCrosshairSizePixels / 2.0;
+    const QRectF box_rect(centre.x() - half_box, centre.y() - half_box,
+                          kTargetBoxSizePixels, kTargetBoxSizePixels);
+
+    QColor outline_color = color;
+    outline_color.setAlpha(220);
+
+    painter.save();
+    painter.setPen(QPen(outline_color, 2));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawRect(box_rect);
+    painter.drawLine(QPointF(centre.x() - half_crosshair, centre.y()),
+                     QPointF(centre.x() + half_crosshair, centre.y()));
+    painter.drawLine(QPointF(centre.x(), centre.y() - half_crosshair),
+                     QPointF(centre.x(), centre.y() + half_crosshair));
+    painter.restore();
+}
+
+} // namespace
 
 // ============================================================================
 // AspectRatioLabel Implementation
@@ -86,9 +271,9 @@ VectorscopeDialog::VectorscopeDialog(QWidget *parent)
     : QDialog(parent)
     , d_(std::make_unique<VectorscopeDialogPrivate>())
 {
-    setWindowTitle("Vectorscope");
+    updateWindowTitle();
     setWindowFlags(Qt::Window);
-    resize(800, 900);
+    resize(1120, 900);
     
     setupUI();
     connectSignals();
@@ -100,9 +285,24 @@ int VectorscopeDialog::getGraticuleMode() const {
     return graticule_group_->checkedId();
 }
 
+void VectorscopeDialog::setScopeLabel(const QString& scope_label)
+{
+    d_->scope_label = scope_label;
+    updateWindowTitle();
+}
+
+void VectorscopeDialog::updateWindowTitle()
+{
+    if (d_->node_id.is_valid()) {
+        setWindowTitle(QString("%1 - Node %2").arg(d_->scope_label).arg(d_->node_id.value()));
+        return;
+    }
+    setWindowTitle(d_->scope_label);
+}
+
 void VectorscopeDialog::setStage(orc::NodeID node_id) {
     d_->node_id = node_id;
-    setWindowTitle(QString("Vectorscope - Node %1").arg(node_id.value()));
+    updateWindowTitle();
 }
 
 void VectorscopeDialog::setupUI() {
@@ -130,7 +330,9 @@ void VectorscopeDialog::setupUI() {
     blend_color_checkbox_ = new QCheckBox("Blend");
     defocus_checkbox_ = new QCheckBox("Defocus");
     draw_lines_checkbox_ = new QCheckBox("Draw Trace Lines");
+    active_area_only_checkbox_ = new QCheckBox("Active Picture Area Only");
     draw_lines_checkbox_->setChecked(true);
+    active_area_only_checkbox_->setChecked(true);
     
     // Point size spinbox
     QHBoxLayout* point_layout = new QHBoxLayout();
@@ -145,6 +347,7 @@ void VectorscopeDialog::setupUI() {
     display_layout->addWidget(blend_color_checkbox_);
     display_layout->addWidget(defocus_checkbox_);
     display_layout->addWidget(draw_lines_checkbox_);
+    display_layout->addWidget(active_area_only_checkbox_);
     display_layout->addLayout(point_layout);
     
     controls_layout->addWidget(display_group);
@@ -211,11 +414,16 @@ void VectorscopeDialog::connectSignals() {
     connect(blend_color_checkbox_, &QCheckBox::toggled, this, &VectorscopeDialog::onBlendColorToggled);
     connect(defocus_checkbox_, &QCheckBox::toggled, this, &VectorscopeDialog::onDefocusToggled);
     connect(draw_lines_checkbox_, &QCheckBox::toggled, this, &VectorscopeDialog::onDrawLinesToggled);
+    connect(active_area_only_checkbox_, &QCheckBox::toggled, this, &VectorscopeDialog::onActiveAreaOnlyToggled);
     connect(point_size_spinbox_, QOverload<int>::of(&QSpinBox::valueChanged), this, &VectorscopeDialog::onPointSizeChanged);
     connect(field_select_group_, QOverload<int>::of(&QButtonGroup::idClicked),
             this, [this](int){ onFieldSelectionChanged(); });
     connect(graticule_group_, QOverload<int>::of(&QButtonGroup::idClicked),
             this, [this](int){ onGraticuleChanged(); });
+}
+
+bool VectorscopeDialog::isActiveAreaOnly() const {
+    return active_area_only_checkbox_ && active_area_only_checkbox_->isChecked();
 }
 
 void VectorscopeDialog::updateVectorscope(const orc::VectorscopeData& data) {
@@ -237,10 +445,9 @@ void VectorscopeDialog::renderVectorscope(const orc::VectorscopeData& data) {
         clearDisplay();
         return;
     }
-    
-    constexpr int SIZE = 1024;
-    constexpr double SCALE = 65536.0 / SIZE;
-    constexpr int HALF_SIZE = SIZE / 2;
+
+    const orc::gui::VectorscopePlotGeometry geometry;
+    const int size = geometry.canvas_size;
     
     // Check if this is mono/no-chroma data (all samples near origin)
     // Mono decoders produce no chroma, so all U/V values will be ~0
@@ -288,7 +495,7 @@ void VectorscopeDialog::renderVectorscope(const orc::VectorscopeData& data) {
     );
     
     // Create image
-    QImage image(SIZE, SIZE, QImage::Format_RGB888);
+    QImage image(size, size, QImage::Format_RGB888);
     image.fill(Qt::black);
     
     QPainter painter(&image);
@@ -335,7 +542,7 @@ void VectorscopeDialog::renderVectorscope(const orc::VectorscopeData& data) {
         painter.setPen(color);
         painter.setBrush(color);
         
-        // Apply defocus if enabled
+        // Apply defocus if enabled.
         double u = sample.u;
         double v = sample.v;
         if (defocus) {
@@ -344,10 +551,11 @@ void VectorscopeDialog::renderVectorscope(const orc::VectorscopeData& data) {
         }
         
         // Vectorscope: U is horizontal (positive right), V is vertical (positive up)
-        int x = HALF_SIZE + static_cast<int>(u / SCALE);
-        int y = HALF_SIZE - static_cast<int>(v / SCALE);
-        
-        if (x >= 0 && x < SIZE && y >= 0 && y < SIZE) {
+        const QPointF plot_point = geometry.mapUV(u, v);
+
+        if (isPointWithinCanvas(plot_point, size)) {
+            const int x = static_cast<int>(plot_point.x());
+            const int y = static_cast<int>(plot_point.y());
             QPoint current_point(x, y);
             
             // Draw line from previous point if enabled (real vectorscope behavior)
@@ -375,7 +583,7 @@ void VectorscopeDialog::renderVectorscope(const orc::VectorscopeData& data) {
         font.setPointSize(16);
         font.setBold(true);
         painter.setFont(font);
-        painter.drawText(QRect(0, SIZE/2 - 40, SIZE, 80), Qt::AlignCenter | Qt::TextWordWrap,
+        painter.drawText(QRect(0, size / 2 - 40, size, 80), Qt::AlignCenter | Qt::TextWordWrap,
                         "NO CHROMA DATA\n(Using mono decoder?)");
     }
     
@@ -393,39 +601,42 @@ void VectorscopeDialog::renderVectorscope(const orc::VectorscopeData& data) {
         field_info = "Second field only";
     }
     
-    info_label_->setText(QString("Field %1 - %2 samples (%3x%4) - %5")
+    const QString sample_area = isActiveAreaOnly() ? "active picture" : "full frame";
+
+    info_label_->setText(QString("Field %1 - %2 samples (%3x%4 %5) - %6")
         .arg(data.field_number + 1)  // Convert to 1-based
         .arg(data.samples.size())
         .arg(data.width)
         .arg(data.height)
+        .arg(sample_area)
         .arg(field_info));
 }
 
 void VectorscopeDialogPrivate::drawGraticule(QPainter& painter, VectorscopeDialog* dialog,
                                               orc::VideoSystem system, int32_t white_16b_ire, int32_t black_16b_ire) {
-    constexpr int SIZE = 1024;
-    constexpr int HALF_SIZE = SIZE / 2;
+    const orc::gui::VectorscopePlotGeometry geometry;
 
     painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.setPen(QPen(Qt::white, 1));
+    painter.setPen(QPen(Qt::white, orc::gui::kVectorscopeAxisStrokeWidth));
 
-    // Center cross and outer circle (match ld-analyse)
-    painter.drawLine(HALF_SIZE, 0, HALF_SIZE, SIZE - 1);
-    painter.drawLine(0, HALF_SIZE, SIZE - 1, HALF_SIZE);
-    painter.drawEllipse(0, 0, SIZE - 1, SIZE - 1);
+    painter.drawLine(QPointF(geometry.centre_point.x(), geometry.plot_area.top()),
+                     QPointF(geometry.centre_point.x(), geometry.plot_area.bottom()));
+    painter.drawLine(QPointF(geometry.plot_area.left(), geometry.centre_point.y()),
+                     QPointF(geometry.plot_area.right(), geometry.centre_point.y()));
 
-    // NTSC I/Q axes only if system is NTSC
+    painter.setPen(QPen(Qt::white, orc::gui::kVectorscopeCircleStrokeWidth));
+    painter.drawEllipse(geometry.plot_area);
+    drawCircleMarkers(painter, geometry);
+
+    painter.setPen(QPen(Qt::white, orc::gui::kVectorscopeAxisStrokeWidth));
+
+    // NTSC keeps the full I/Q reference set and labels.
     if (system == orc::VideoSystem::NTSC) {
-        double theta = (-33.0 * M_PI) / 180.0;
-        for (int i = 0; i < 4; i++) {
-            painter.drawLine(
-                HALF_SIZE + (0.2 * HALF_SIZE * cos(theta)),
-                HALF_SIZE + (0.2 * HALF_SIZE * sin(theta)),
-                HALF_SIZE + (HALF_SIZE * cos(theta)),
-                HALF_SIZE + (HALF_SIZE * sin(theta))
-            );
-            theta += M_PI / 2.0;
-        }
+        drawReferenceAxis(painter, geometry, kNtscIAxisStandardDegrees);
+        drawReferenceAxis(painter, geometry, kNtscNegIAxisStandardDegrees);
+        drawReferenceAxis(painter, geometry, kNtscQAxisStandardDegrees);
+        drawReferenceAxis(painter, geometry, kNtscNegQAxisStandardDegrees);
+        drawNtcsIqLabels(painter, geometry);
     }
 
     // 75% vs 100% targets scaling
@@ -435,7 +646,6 @@ void VectorscopeDialogPrivate::drawGraticule(QPainter& painter, VectorscopeDialo
         const double percent = (graticule_mode == 2) ? 0.75 : 1.0;
         const int32_t white = white_16b_ire;
         const int32_t black = black_16b_ire;
-        const double SCALE = 65536.0 / SIZE;
         const double ireRange = static_cast<double>(white - black);
 
         if (white > black) {
@@ -445,58 +655,26 @@ void VectorscopeDialogPrivate::drawGraticule(QPainter& painter, VectorscopeDialo
             
             // Draw targets for six colour bars (R'G'B' 001..110)
             for (int rgb = 1; rgb < 7; rgb++) {
-                // R'G'B' for this bar - scale by percent for 75% vs 100%
-                double R = percent * static_cast<double>((rgb >> 2) & 1);
-                double G = percent * static_cast<double>((rgb >> 1) & 1);
-                double B = percent * static_cast<double>(rgb & 1);
+                const orc::UVSample target = orc::gui::vectorscopeDisplayTargetUv(rgb, percent, ireRange, system);
+                const double barTheta = std::atan2(-target.v, target.u);
+                const double barMagnitude = std::hypot(target.u, target.v);
+                const QPointF target_point = geometry.mapUV(target.u, target.v);
+                const QColor target_color = vectorscopeTargetColor(rgb);
 
-                // Convert R'G'B' to Y'UV [Poynton p337 eq 28.5]
-                double U = (R * -0.147141) + (G * -0.288869) + (B * 0.436010);
-                double V = (R * 0.614975)  + (G * -0.514965) + (B * -0.100010);
-
-                // Scale U/V to IRE range to match ComponentFrame scaling
-                // ComponentFrame U/V are in IRE-scaled units (from FrameCanvas::rgb)
-                U *= ireRange;
-                V *= ireRange;
-
-                double barTheta = atan2(-V, U);
-                double barMag = std::sqrt((V * V) + (U * U)) / SCALE;
-
-                // Grid around target: 10° and 10% steps
-                const double stepTheta = (10.0 * M_PI) / 180.0;
-                const double stepMag = 0.1 * barMag;
-
-                // Angle sweeps
-                for (int step = -1; step < 2; step++) {
-                    double theta = barTheta + (step * stepTheta);
-                    painter.drawLine(
-                        HALF_SIZE + ((barMag - stepMag) * cos(theta)),
-                        HALF_SIZE + ((barMag - stepMag) * sin(theta)),
-                        HALF_SIZE + ((barMag + stepMag) * cos(theta)),
-                        HALF_SIZE + ((barMag + stepMag) * sin(theta))
-                    );
-                }
-                // Magnitude sweeps
-                for (int step = -1; step < 2; step++) {
-                    double mag = barMag + (step * stepMag);
-                    painter.drawLine(
-                        HALF_SIZE + (mag * cos(barTheta - stepTheta)),
-                        HALF_SIZE + (mag * sin(barTheta - stepTheta)),
-                        HALF_SIZE + (mag * cos(barTheta + stepTheta)),
-                        HALF_SIZE + (mag * sin(barTheta + stepTheta))
-                    );
-                }
+                drawColorZone(painter, geometry, barTheta, barMagnitude, target_color);
+                drawTargetBox(painter, geometry, target_point, target_color);
                 
                 // Draw color label positioned just outside the target
-                double label_distance = barMag + (2.5 * stepMag);
-                int label_x = HALF_SIZE + static_cast<int>(label_distance * cos(barTheta));
-                int label_y = HALF_SIZE + static_cast<int>(label_distance * sin(barTheta));
+                const double label_distance = barMagnitude + geometry.pixelsToMagnitude(kColorLabelOffsetPixels);
+                const QPointF label_position = geometry.pointFromVectorscopeAngle(barTheta, label_distance);
                 
                 QFont font = painter.font();
-                font.setPointSize(12);
+                font.setPointSize(14);
                 font.setBold(true);
                 painter.setFont(font);
-                painter.setPen(Qt::white);
+                QColor label_color = target_color;
+                label_color.setAlpha(255);
+                painter.setPen(QPen(label_color, orc::gui::kVectorscopeAxisStrokeWidth));
                 
                 // Center the text at the label position
                 QFontMetrics fm(font);
@@ -504,7 +682,9 @@ void VectorscopeDialogPrivate::drawGraticule(QPainter& painter, VectorscopeDialo
                 int text_width = fm.horizontalAdvance(label_text);
                 int text_height = fm.height();
                 
-                painter.drawText(label_x - text_width / 2, label_y + text_height / 4, label_text);
+                painter.drawText(static_cast<int>(label_position.x()) - text_width / 2,
+                                 static_cast<int>(label_position.y()) + text_height / 4,
+                                 label_text);
             }
         }
     }
@@ -512,7 +692,9 @@ void VectorscopeDialogPrivate::drawGraticule(QPainter& painter, VectorscopeDialo
 }
 
 void VectorscopeDialog::clearDisplay() {
-    QImage blank(1024, 1024, QImage::Format_RGB888);
+    QImage blank(orc::gui::kVectorscopeCanvasSize,
+                 orc::gui::kVectorscopeCanvasSize,
+                 QImage::Format_RGB888);
     blank.fill(Qt::black);
     {
         QPainter painter(&blank);
@@ -520,13 +702,16 @@ void VectorscopeDialog::clearDisplay() {
             d_->drawGraticule(painter, this, d_->last_data->system, 
                              d_->last_data->white_16b_ire, d_->last_data->black_16b_ire);
         } else {
-            // Draw basic cross and outer circle when no data yet
-            constexpr int SIZE = 1024;
-            constexpr int HALF_SIZE = SIZE / 2;
-            painter.setPen(QPen(Qt::white, 1));
-            painter.drawLine(HALF_SIZE, 0, HALF_SIZE, SIZE - 1);
-            painter.drawLine(0, HALF_SIZE, SIZE - 1, HALF_SIZE);
-            painter.drawEllipse(0, 0, SIZE - 1, SIZE - 1);
+            const orc::gui::VectorscopePlotGeometry geometry;
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            painter.setPen(QPen(Qt::white, orc::gui::kVectorscopeAxisStrokeWidth));
+            painter.drawLine(QPointF(geometry.centre_point.x(), geometry.plot_area.top()),
+                             QPointF(geometry.centre_point.x(), geometry.plot_area.bottom()));
+            painter.drawLine(QPointF(geometry.plot_area.left(), geometry.centre_point.y()),
+                             QPointF(geometry.plot_area.right(), geometry.centre_point.y()));
+            painter.setPen(QPen(Qt::white, orc::gui::kVectorscopeCircleStrokeWidth));
+            painter.drawEllipse(geometry.plot_area);
+            drawCircleMarkers(painter, geometry);
         }
         painter.end();
     }
@@ -587,4 +772,9 @@ void VectorscopeDialog::onPointSizeChanged() {
     if (d_->last_data.has_value()) {
         renderVectorscope(*d_->last_data);
     }
+}
+
+void VectorscopeDialog::onActiveAreaOnlyToggled() {
+    ORC_LOG_DEBUG("VectorscopeDialog: Active area only toggled -> {}", isActiveAreaOnly());
+    emit dataRefreshRequested();
 }

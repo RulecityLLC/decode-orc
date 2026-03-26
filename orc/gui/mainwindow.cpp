@@ -89,7 +89,9 @@ namespace orc {
 
 // Helper functions to convert between common types and presenter types
 namespace {
-    constexpr const char* kVectorscopeViewId = "preview.vectorscope";
+
+    constexpr const char* kLineScopeViewId = "preview.linescope";
+    constexpr const char* kFieldTimingViewId = "preview.field_timing";
 
     orc::presenters::VideoFormat toPresenterVideoFormat(orc::VideoSystem system) {
         switch (system) {
@@ -1155,6 +1157,19 @@ void MainWindow::quickProject(const QString& filename)
     if (ext == "tbc") {
         source_type = orc::SourceType::Composite;
         primary_file = filename.toStdString();
+
+        const QString legacy_warning =
+            "You have selected a .tbc file which will be treated as a composite source.  If you meant to load a (dual-TBC) YC source, please rename your TBC files to use the .tbcc (chroma) extension and .tbcy (luma) extension before using the quick project function";
+
+        const QString selected_base_name = file_info.completeBaseName();
+        const bool selected_chroma_file = selected_base_name.endsWith("_chroma", Qt::CaseInsensitive);
+        const QString paired_legacy_chroma_path =
+            file_info.absolutePath() + "/" + selected_base_name + "_chroma.tbc";
+        const bool paired_legacy_chroma_exists = QFileInfo::exists(paired_legacy_chroma_path);
+
+        if (selected_chroma_file || paired_legacy_chroma_exists) {
+            QMessageBox::warning(this, "Legacy YC TBC Naming Detected", legacy_warning);
+        }
     } else if (ext == "tbcc") {
         source_type = orc::SourceType::YC;
         primary_file = filename.toStdString();
@@ -1476,6 +1491,7 @@ void MainWindow::updateUIState()
     // Enable/disable DAG view based on project state
     if (dag_view_) {
         dag_view_->setEnabled(has_project);
+        dag_view_->setShowWelcomeMessage(!has_project);
     }
     
     // Enable aspect ratio selector when preview is available (in preview dialog)
@@ -2401,7 +2417,8 @@ void MainWindow::refreshVectorscopeForCurrentCoordinate()
         return;
     }
 
-    if (!preview_dialog_->hasAvailablePreviewView(kVectorscopeViewId)) {
+    const std::string active_vectorscope_view_id = preview_dialog_->activeVectorscopeViewId();
+    if (!preview_dialog_->hasAvailablePreviewView(active_vectorscope_view_id)) {
         preview_dialog_->updateVectorscope(current_view_node_id_, std::nullopt);
         return;
     }
@@ -2420,6 +2437,10 @@ void MainWindow::refreshVectorscopeForCurrentCoordinate()
         ? *preview_dialog_->sharedPreviewCoordinate()
         : buildCurrentPreviewCoordinate();
 
+    // Vectorscope must follow the currently displayed preview item.
+    // Shared coordinates may come from line-scope clicks (absolute field indices),
+    // which would otherwise desynchronize frame-based vectorscope requests.
+    coordinate.field_index = static_cast<uint64_t>(preview_dialog_->currentIndex());
     coordinate.data_type_context = inferCurrentVideoDataType();
     if (!coordinate.is_valid()) {
         return;
@@ -2427,7 +2448,7 @@ void MainWindow::refreshVectorscopeForCurrentCoordinate()
 
     const auto result = render_coordinator_->requestPreviewViewData(
         current_view_node_id_,
-        kVectorscopeViewId,
+        active_vectorscope_view_id,
         coordinate.data_type_context,
         coordinate);
 
@@ -3856,6 +3877,11 @@ void MainWindow::onFieldTimingRequested()
         ORC_LOG_WARN("No node selected for field timing view");
         return;
     }
+
+    if (!preview_dialog_ || !preview_dialog_->hasAvailablePreviewView(kFieldTimingViewId)) {
+        ORC_LOG_DEBUG("Field timing view is not available for the selected stage");
+        return;
+    }
     
     // Request field timing data for current preview frame/field
     int current_index = preview_dialog_->previewSlider()->value();
@@ -4416,6 +4442,11 @@ void MainWindow::onLineScopeRequested(int image_x, int image_y)
     
     if (!current_view_node_id_.is_valid()) {
         ORC_LOG_WARN("No node selected for line scope");
+        return;
+    }
+
+    if (!preview_dialog_ || !preview_dialog_->hasAvailablePreviewView(kLineScopeViewId)) {
+        ORC_LOG_DEBUG("Line scope view is not available for the selected stage");
         return;
     }
     

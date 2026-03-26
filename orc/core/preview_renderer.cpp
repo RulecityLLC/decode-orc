@@ -16,7 +16,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <queue>
 #include <png.h>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace orc {
 
@@ -1226,24 +1229,53 @@ bool PreviewRenderer::get_show_dropouts() const {
     return show_dropouts_;
 }
 
-std::shared_ptr<const VideoFieldRepresentation> PreviewRenderer::get_representation_at_node(const NodeID& node_id) {
-    // Ensure node is executed
-    ensure_node_executed(node_id);
-    
-    // Use field renderer to get the representation
-    // We need to render a field to get the representation - use field 0 as a representative
-    if (!field_renderer_) {
+std::shared_ptr<const VideoFieldRepresentation> PreviewRenderer::get_representation_at_node(const NodeID& node_id) const {
+    if (!dag_ || !field_renderer_) {
         return nullptr;
     }
-    
-    // Render field 0 to get the representation at this node
-    auto result = field_renderer_->render_field_at_node(node_id, FieldID(0));
-    
-    if (!result.is_valid || !result.representation) {
-        return nullptr;
+
+    std::unordered_map<NodeID, const DAGNode*> node_index;
+    node_index.reserve(dag_->nodes().size());
+    for (const auto& node : dag_->nodes()) {
+        node_index.emplace(node.node_id, &node);
     }
-    
-    return result.representation;
+
+    std::queue<NodeID> pending;
+    std::unordered_set<NodeID> visited;
+    pending.push(node_id);
+
+    while (!pending.empty()) {
+        const NodeID current = pending.front();
+        pending.pop();
+
+        if (!visited.insert(current).second) {
+            continue;
+        }
+
+        auto node_it = node_index.find(current);
+        if (node_it == node_index.end()) {
+            continue;
+        }
+
+        ensure_node_executed(current);
+
+        auto result = field_renderer_->render_field_at_node(current, FieldID(0));
+        if (result.is_valid && result.representation) {
+            if (current != node_id) {
+                ORC_LOG_DEBUG(
+                    "get_representation_at_node: falling back from '{}' to upstream node '{}'",
+                    node_id.to_string(),
+                    current.to_string());
+            }
+            return result.representation;
+        }
+
+        for (const auto& input_node_id : node_it->second->input_node_ids) {
+            pending.push(input_node_id);
+        }
+    }
+
+    return nullptr;
 }
 
 void PreviewRenderer::render_dropouts(PreviewImage& image) const {
@@ -1611,16 +1643,25 @@ ImageToFieldMappingResult PreviewRenderer::map_image_to_field(
     result.is_valid = false;
     result.field_index = 0;
     result.field_line = 0;
+
+    ORC_LOG_DEBUG(
+        "map_image_to_field: node='{}' output_type={} output_index={} image_y={} image_height={}",
+        node_id.to_string(),
+        static_cast<int>(output_type),
+        output_index,
+        image_y,
+        image_height);
     
+    auto repr = get_representation_at_node(node_id);
+    if (!repr) {
+        ORC_LOG_DEBUG("map_image_to_field: no representation available for node='{}'", node_id.to_string());
+        return result;
+    }
+
     if (output_type == PreviewOutputType::Field) {
         // Simple case: field mode, image_y is the line number
         // Validate against actual field height
-        auto field_result = field_renderer_->render_field_at_node(node_id, FieldID(output_index));
-        if (!field_result.is_valid || !field_result.representation) {
-            return result;
-        }
-        
-        auto descriptor = field_result.representation->get_descriptor(FieldID(output_index));
+        auto descriptor = repr->get_descriptor(FieldID(output_index));
         if (!descriptor || image_y < 0 || image_y >= static_cast<int>(descriptor->height)) {
             return result;  // Line out of bounds
         }
@@ -1628,18 +1669,19 @@ ImageToFieldMappingResult PreviewRenderer::map_image_to_field(
         result.is_valid = true;
         result.field_index = output_index;
         result.field_line = image_y;
+        ORC_LOG_DEBUG(
+            "map_image_to_field: mapped to field={} line={} (field mode)",
+            result.field_index,
+            result.field_line);
         return result;
     }
     
     if (output_type == PreviewOutputType::Frame || output_type == PreviewOutputType::Frame_Reversed) {
         // Frame mode: determine field order and top/bottom placement using parity hints
         uint64_t first_field_offset = 0;
-        auto probe_result = field_renderer_->render_field_at_node(node_id, FieldID(0));
-        if (probe_result.is_valid && probe_result.representation) {
-            auto parity_hint = probe_result.representation->get_field_parity_hint(FieldID(0));
-            if (parity_hint.has_value() && !parity_hint->is_first_field) {
-                first_field_offset = 1;
-            }
+        auto parity_hint = repr->get_field_parity_hint(FieldID(0));
+        if (parity_hint.has_value() && !parity_hint->is_first_field) {
+            first_field_offset = 1;
         }
         bool is_reversed = (output_type == PreviewOutputType::Frame_Reversed);
 
@@ -1649,33 +1691,19 @@ ImageToFieldMappingResult PreviewRenderer::map_image_to_field(
 
         // Determine whether the first field is on even (top) or odd (bottom) image lines
         bool first_is_top = true; // default assumption
-        auto first_result = field_renderer_->render_field_at_node(node_id, FieldID(frame_first_field));
-        std::shared_ptr<const VideoFieldRepresentation> first_repr;
-        if (first_result.is_valid && first_result.representation) {
-            first_repr = first_result.representation;
-            auto first_parity = first_repr->get_field_parity_hint(FieldID(frame_first_field));
-            if (first_parity.has_value()) {
-                first_is_top = first_parity->is_first_field;
-            }
-        }
-        
-        // Early validation: ensure we have field representation before proceeding
-        if (!first_repr) {
-            return result;  // Node doesn't support field rendering (e.g., sink nodes)
+        auto first_parity = repr->get_field_parity_hint(FieldID(frame_first_field));
+        if (first_parity.has_value()) {
+            first_is_top = first_parity->is_first_field;
         }
         
         // Account for reversed weaving
         if (is_reversed) first_is_top = !first_is_top;
 
         // Get the actual field heights to handle odd total line counts correctly
-        auto first_descriptor = first_repr->get_descriptor(FieldID(frame_first_field));
-        auto second_result = field_renderer_->render_field_at_node(node_id, FieldID(frame_second_field));
-        if (!first_descriptor || !second_result.is_valid || !second_result.representation) {
+        auto first_descriptor = repr->get_descriptor(FieldID(frame_first_field));
+        auto second_descriptor = repr->get_descriptor(FieldID(frame_second_field));
+        if (!first_descriptor || !second_descriptor) {
             return result;  // Missing field data
-        }
-        auto second_descriptor = second_result.representation->get_descriptor(FieldID(frame_second_field));
-        if (!second_descriptor) {
-            return result;
         }
         
         size_t first_field_height = first_descriptor->height;
@@ -1705,21 +1733,16 @@ ImageToFieldMappingResult PreviewRenderer::map_image_to_field(
         result.field_line = tentative_field_line;
         
         // Validate that the calculated field_line is within the actual field height
-        if (!first_repr) {
-            return result;  // No representation available
-        }
-        
-        auto target_field_result = field_renderer_->render_field_at_node(node_id, FieldID(result.field_index));
-        if (!target_field_result.is_valid || !target_field_result.representation) {
-            return result;
-        }
-        
-        auto target_descriptor = target_field_result.representation->get_descriptor(FieldID(result.field_index));
+        auto target_descriptor = repr->get_descriptor(FieldID(result.field_index));
         if (!target_descriptor || result.field_line < 0 || result.field_line >= static_cast<int>(target_descriptor->height)) {
             return result;  // Line out of bounds for this field
         }
         
         result.is_valid = true;
+        ORC_LOG_DEBUG(
+            "map_image_to_field: mapped to field={} line={} (frame mode)",
+            result.field_index,
+            result.field_line);
         return result;
     }
     
@@ -1738,17 +1761,16 @@ ImageToFieldMappingResult PreviewRenderer::map_image_to_field(
         }
         
         // Validate that the calculated field_line is within the actual field height
-        auto target_field_result = field_renderer_->render_field_at_node(node_id, FieldID(result.field_index));
-        if (!target_field_result.is_valid || !target_field_result.representation) {
-            return result;
-        }
-        
-        auto target_descriptor = target_field_result.representation->get_descriptor(FieldID(result.field_index));
+        auto target_descriptor = repr->get_descriptor(FieldID(result.field_index));
         if (!target_descriptor || result.field_line < 0 || result.field_line >= static_cast<int>(target_descriptor->height)) {
             return result;  // Line out of bounds for this field
         }
         
         result.is_valid = true;
+        ORC_LOG_DEBUG(
+            "map_image_to_field: mapped to field={} line={} (split mode)",
+            result.field_index,
+            result.field_line);
         return result;
     }
     
@@ -1767,23 +1789,36 @@ FieldToImageMappingResult PreviewRenderer::map_field_to_image(
     FieldToImageMappingResult result;
     result.is_valid = false;
     result.image_y = 0;
+
+    ORC_LOG_DEBUG(
+        "map_field_to_image: node='{}' output_type={} output_index={} field_index={} field_line={} image_height={}",
+        node_id.to_string(),
+        static_cast<int>(output_type),
+        output_index,
+        field_index,
+        field_line,
+        image_height);
     
+    auto repr = get_representation_at_node(node_id);
+    if (!repr) {
+        ORC_LOG_DEBUG("map_field_to_image: no representation available for node='{}'", node_id.to_string());
+        return result;
+    }
+
     if (output_type == PreviewOutputType::Field) {
         // Simple case: field mode, line number is the image_y
         result.is_valid = true;
         result.image_y = field_line;
+        ORC_LOG_DEBUG("map_field_to_image: mapped to image_y={} (field mode)", result.image_y);
         return result;
     }
     
     if (output_type == PreviewOutputType::Frame || output_type == PreviewOutputType::Frame_Reversed) {
         // Frame mode: determine field order and placement using parity hints
         uint64_t first_field_offset = 0;
-        auto probe_result = field_renderer_->render_field_at_node(node_id, FieldID(0));
-        if (probe_result.is_valid && probe_result.representation) {
-            auto parity_hint = probe_result.representation->get_field_parity_hint(FieldID(0));
-            if (parity_hint.has_value() && !parity_hint->is_first_field) {
-                first_field_offset = 1;
-            }
+        auto parity_hint = repr->get_field_parity_hint(FieldID(0));
+        if (parity_hint.has_value() && !parity_hint->is_first_field) {
+            first_field_offset = 1;
         }
         bool is_reversed = (output_type == PreviewOutputType::Frame_Reversed);
 
@@ -1793,14 +1828,9 @@ FieldToImageMappingResult PreviewRenderer::map_field_to_image(
 
         // Determine whether the first field is on even (top) or odd (bottom) lines
         bool first_is_top = true; // default assumption
-        {
-            auto first_result = field_renderer_->render_field_at_node(node_id, FieldID(frame_first_field));
-            if (first_result.is_valid && first_result.representation) {
-                auto first_parity = first_result.representation->get_field_parity_hint(FieldID(frame_first_field));
-                if (first_parity.has_value()) {
-                    first_is_top = first_parity->is_first_field;
-                }
-            }
+        auto first_parity = repr->get_field_parity_hint(FieldID(frame_first_field));
+        if (first_parity.has_value()) {
+            first_is_top = first_parity->is_first_field;
         }
         if (is_reversed) first_is_top = !first_is_top;
 
@@ -1813,6 +1843,7 @@ FieldToImageMappingResult PreviewRenderer::map_field_to_image(
             return result;
         }
         result.is_valid = true;
+        ORC_LOG_DEBUG("map_field_to_image: mapped to image_y={} (frame mode)", result.image_y);
         return result;
     }
     
@@ -1831,6 +1862,7 @@ FieldToImageMappingResult PreviewRenderer::map_field_to_image(
             return result;
         }
         result.is_valid = true;
+        ORC_LOG_DEBUG("map_field_to_image: mapped to image_y={} (split mode)", result.image_y);
         return result;
     }
     
@@ -1849,9 +1881,9 @@ FrameFieldsResult PreviewRenderer::get_frame_fields(
     
     // Determine first_field_offset using the SAME logic as render_output()
     uint64_t first_field_offset = 0;
-    auto probe_result = field_renderer_->render_field_at_node(node_id, FieldID(0));
-    if (probe_result.is_valid && probe_result.representation) {
-        auto parity_hint = probe_result.representation->get_field_parity_hint(FieldID(0));
+    auto repr = get_representation_at_node(node_id);
+    if (repr) {
+        auto parity_hint = repr->get_field_parity_hint(FieldID(0));
         if (parity_hint.has_value() && !parity_hint->is_first_field) {
             first_field_offset = 1;
         }

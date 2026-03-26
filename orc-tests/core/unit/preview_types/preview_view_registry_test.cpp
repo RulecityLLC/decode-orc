@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <unordered_set>
 
 #include "../../../orc/core/include/preview_view_registry.h"
 #include "../../../orc/core/include/colour_preview_provider.h"
@@ -264,8 +265,8 @@ public:
     }
 };
 
-// A stage that returns a ColourFrameCarrier without vectorscope_data.
-// Used to test the "carrier has no vectorscope data" error path.
+// A stage that returns a ColourFrameCarrier without precomputed vectorscope_data.
+// Used to verify that the registry can rebuild vectorscope samples on demand.
 class TestColourPreviewStageNoVectorscope final
     : public orc::DAGStage
     , public orc::IStagePreviewCapability
@@ -710,6 +711,28 @@ TEST(PreviewViewRegistryTest, applicableViews_emptyWhenStageHasNoCapabilityInter
     EXPECT_TRUE(views.empty());
 }
 
+TEST(PreviewViewRegistryTest, defaultViews_includeGenericVfrVisualizations)
+{
+    orc::PreviewViewRegistry registry;
+
+    auto stage = std::make_shared<TestPreviewStage>(
+        std::vector<orc::VideoDataType>{orc::VideoDataType::CompositeNTSC});
+    auto dag = std::make_shared<orc::DAG>(build_test_dag_with_stage(stage));
+
+    orc::PreviewViewRegistry::register_default_views(registry, dag, nullptr);
+
+    const auto views = registry.get_applicable_views(
+        *dag, orc::NodeID(1), orc::VideoDataType::CompositeNTSC);
+
+    std::unordered_set<std::string> ids;
+    for (const auto& view : views) {
+        ids.insert(view.id);
+    }
+
+    EXPECT_TRUE(ids.find("preview.linescope") != ids.end());
+    EXPECT_TRUE(ids.find("preview.field_timing") != ids.end());
+}
+
 // =============================================================================
 // Vectorscope view — error paths with default views
 // =============================================================================
@@ -740,10 +763,10 @@ TEST(PreviewViewRegistryTest, vectorscopeRequest_failsWhenStageIsNotColourProvid
     EXPECT_FALSE(result.error_message.empty());
 }
 
-TEST(PreviewViewRegistryTest, vectorscopeRequest_failsWhenCarrierHasNoVectorscopeData)
+TEST(PreviewViewRegistryTest, vectorscopeRequest_rebuildsSamplesWhenCarrierHasNoVectorscopeData)
 {
-    // Stage provides a valid colour carrier but without vectorscope_data.
-    // The vectorscope view must return an error.
+    // Stage provides a valid colour carrier but no cached vectorscope payload.
+    // The vectorscope view should rebuild the samples from the carrier planes.
     orc::PreviewViewRegistry registry;
 
     auto stage = std::make_shared<TestColourPreviewStageNoVectorscope>();
@@ -762,8 +785,12 @@ TEST(PreviewViewRegistryTest, vectorscopeRequest_failsWhenCarrierHasNoVectorscop
         orc::VideoDataType::ColourNTSC,
         coordinate);
 
-    EXPECT_FALSE(result.success);
-    EXPECT_FALSE(result.error_message.empty());
+    EXPECT_TRUE(result.success);
+    EXPECT_EQ(result.payload_kind, orc::PreviewViewPayloadKind::Vectorscope);
+    ASSERT_TRUE(result.vectorscope.has_value());
+    EXPECT_EQ(result.vectorscope->width, 2u);
+    EXPECT_EQ(result.vectorscope->height, 2u);
+    EXPECT_EQ(result.vectorscope->samples.size(), 2u);
 }
 
 } // namespace orc_unit_test

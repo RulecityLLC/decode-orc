@@ -12,7 +12,10 @@
 
 #include "../analysis_tool.h"
 #include "vectorscope_data.h"
+#include <orc_preview_carriers.h>
+#include <orc_source_parameters.h>
 #include <memory>
+#include <optional>
 
 // Forward declaration (ComponentFrame is in global namespace, not orc::)
 class ComponentFrame;
@@ -21,6 +24,7 @@ namespace orc {
 
 // Forward declarations
 class ChromaSinkStage;
+class VideoFieldRepresentation;
 
 /**
  * @brief Vectorscope visualization tool for chroma decoder output
@@ -103,8 +107,45 @@ public:
      */
     static VectorscopeData extractFromComponentFrame(
         const ::ComponentFrame& frame,
+        const ::orc::SourceParameters& video_parameters,
         uint64_t field_number,
         uint32_t subsample = 1);
+
+    /**
+     * @brief Extract vectorscope data from a colour preview carrier.
+     *
+     * Uses the decoded U/V planes already present in the carrier and can either
+     * limit sampling to the active picture window or include the entire frame.
+     */
+    static VectorscopeData extractFromColourFrameCarrier(
+        const ColourFrameCarrier& carrier,
+        uint64_t field_number,
+        uint32_t subsample = 1,
+        bool active_area_only = true);
+
+    /**
+     * @brief Extract vectorscope data from composite-domain VFR samples.
+     *
+     * This path demodulates composite (or YC chroma-plane) samples directly
+     * from the source representation, matching the same VFR access pattern
+     * used by line scope and field timing views.
+     *
+     * @param representation Field representation to sample from.
+     * @param video_parameters Source metadata used for active-area bounds and signal levels.
+     * @param first_field_index Field index of the first field to include.
+     * @param second_field_index Optional second field to include (frame mode).
+     * @param field_number Display identifier reported in VectorscopeData.
+     * @param subsample Subsampling factor (1 = all samples).
+     * @param active_area_only True to limit sampling to active picture area.
+     */
+    static VectorscopeData extractFromCompositeRepresentation(
+        const VideoFieldRepresentation& representation,
+        const SourceParameters& video_parameters,
+        uint64_t first_field_index,
+        const std::optional<uint64_t>& second_field_index,
+        uint64_t field_number,
+        uint32_t subsample = 1,
+        bool active_area_only = true);
 };
 
 } // namespace orc
