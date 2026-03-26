@@ -25,6 +25,12 @@ namespace orc_unit_test
     	// virtual std::shared_ptr<IDaphneVBIWriterUtil> CreateInstanceDaphneVBIWriterUtil(IFileWriter<uint8_t> &writer) = 0;
     	MOCK_METHOD(std::shared_ptr<orc::IDaphneVBIWriterUtil>, CreateInstanceDaphneVBIWriterUtil,
     		(orc::IFileWriter<uint8_t> &), (override));
+
+        MOCK_METHOD(std::shared_ptr<orc::ILDSinkStageDeps>, CreateInstanceLDSinkStageDeps,
+            (orc::TriggerProgressCallback &, std::atomic<bool> &, std::atomic<bool> &), (override));
+
+        MOCK_METHOD(std::shared_ptr<orc::ITBCMetadataWriter>, CreateInstanceTBCMetadataWriter,
+            (), (override));
     };
 }
 

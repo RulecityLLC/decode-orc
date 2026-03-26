@@ -104,6 +104,7 @@ add_library(orc-core STATIC
     stages/pal_yc_source/pal_yc_source_stage.cpp
     stages/ntsc_yc_source/ntsc_yc_source_stage.cpp
     stages/ld_sink/ld_sink_stage.cpp
+    stages/ld_sink/ld_sink_stage_deps.cpp
     stages/hackdac_sink/hackdac_sink_stage.cpp
     stages/dropout_correct/dropout_correct_stage.cpp
     stages/dropout_map/dropout_map_stage.cpp

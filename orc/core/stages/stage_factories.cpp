@@ -13,6 +13,8 @@
 
 #include "daphne_vbi_sink_stage_deps.h"
 #include "daphne_vbi_writer_util.h"
+#include "ld_sink_stage_deps.h"
+#include "tbc_metadata_writer.h"
 
 namespace orc
 {
@@ -33,5 +35,20 @@ namespace orc
     	auto instanceWriterUtil = std::make_shared<DaphneVBIWriterUtil>();
     	instanceWriterUtil->init(&writer);
     	return instanceWriterUtil;
+    }
+
+    std::shared_ptr<ILDSinkStageDeps> StageFactories::CreateInstanceLDSinkStageDeps(
+        TriggerProgressCallback& progress_callback,
+        std::atomic<bool>& is_processing,
+        std::atomic<bool>& cancel_requested)
+    {
+        auto instance = std::make_shared<LDSinkStageDeps>(factories_, *this);
+        instance->init(progress_callback, &is_processing, &cancel_requested);
+        return instance;
+    }
+
+    std::shared_ptr<ITBCMetadataWriter> StageFactories::CreateInstanceTBCMetadataWriter()
+    {
+        return std::make_shared<TBCMetadataWriter>();
     }
 } // orc

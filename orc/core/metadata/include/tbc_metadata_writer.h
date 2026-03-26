@@ -10,6 +10,7 @@
 #pragma once
 
 #include "tbc_metadata.h"
+#include "tbc_metadata_writer_interface.h"
 #include <field_id.h>
 #include <observation_context_interface.h>
 #include <string>
@@ -24,7 +25,7 @@ namespace orc {
  * Creates ld-decode compatible SQLite databases with capture metadata,
  * field records, and observer data (VBI, VITC, closed captions, VITS metrics).
  */
-class TBCMetadataWriter {
+class TBCMetadataWriter : public ITBCMetadataWriter {
 public:
     TBCMetadataWriter();
     ~TBCMetadataWriter();

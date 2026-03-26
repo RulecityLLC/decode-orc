@@ -70,6 +70,7 @@ orc_add_core_unit_tests(
         stages/audio_sink/audio_sink_stage_test.cpp
         stages/cc_sink/cc_sink_stage_test.cpp
         stages/ld_sink/ld_sink_stage_test.cpp
+        stages/ld_sink/ld_sink_stage_deps_test.cpp
         stages/efm_sink/efm_sink_stage_test.cpp
         stages/raw_efm_sink/raw_efm_sink_stage_test.cpp
         stages/hackdac_sink/hackdac_sink_stage_test.cpp
