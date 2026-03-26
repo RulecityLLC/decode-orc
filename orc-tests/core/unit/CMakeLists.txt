@@ -52,6 +52,7 @@ orc_add_core_unit_tests(
         "unit;sinks"
 
         stages/chroma_sink/componentframe_test.cpp
+        stages/chroma_sink/vectorscope_analysis_test.cpp
         stages/chroma_sink/chroma_sink_stage_defaults_test.cpp
         stages/chroma_sink/chroma_sink_stage_safety_test.cpp
         stages/chroma_sink/chroma_sink_tweak_panel_test.cpp

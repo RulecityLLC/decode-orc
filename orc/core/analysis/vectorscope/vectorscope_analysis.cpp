@@ -182,34 +182,62 @@ VectorscopeData VectorscopeAnalysisTool::extractFromInterlacedRGB(
 
 VectorscopeData VectorscopeAnalysisTool::extractFromComponentFrame(
     const ::ComponentFrame& frame,
+    const ::orc::SourceParameters& video_parameters,
     uint64_t field_number,
     uint32_t subsample) {
     
     VectorscopeData data;
-    int32_t width = frame.getWidth();
-    int32_t height = frame.getHeight();
-    data.width = static_cast<uint32_t>(width);
-    data.height = static_cast<uint32_t>(height);
+    const int32_t width = frame.getWidth();
+    const int32_t height = frame.getHeight();
     data.field_number = field_number;
     
     if (width == 0 || height == 0 || subsample == 0) {
         return data;
     }
+
+    int32_t x_start = 0;
+    int32_t x_end = width;
+    int32_t y_start = 0;
+    int32_t y_end = height;
+
+    if (video_parameters.active_video_start >= 0 &&
+        video_parameters.active_video_end > video_parameters.active_video_start &&
+        video_parameters.active_video_end <= width) {
+        x_start = video_parameters.active_video_start;
+        x_end = video_parameters.active_video_end;
+    }
+
+    if (video_parameters.first_active_frame_line >= 0 &&
+        video_parameters.last_active_frame_line > video_parameters.first_active_frame_line &&
+        video_parameters.last_active_frame_line <= height) {
+        y_start = video_parameters.first_active_frame_line;
+        y_end = video_parameters.last_active_frame_line;
+    }
+
+    data.width = static_cast<uint32_t>(x_end - x_start);
+    data.height = static_cast<uint32_t>(y_end - y_start);
     
-    // Reserve space for samples from both fields (with subsampling)
-    size_t estimated_samples = (width / subsample) * (height / subsample);
+    // Reserve space for samples from the active picture area only.
+    const size_t active_width = static_cast<size_t>(x_end - x_start);
+    const size_t active_height = static_cast<size_t>(y_end - y_start);
+    size_t estimated_samples = (active_width / subsample) * (active_height / subsample);
     data.samples.reserve(estimated_samples);
     
     // Process both fields separately
     // Field 0 (first/odd field): even lines (0, 2, 4, ...)
     // Field 1 (second/even field): odd lines (1, 3, 5, ...)
     for (uint8_t field_id = 0; field_id < 2; field_id++) {
+        int32_t first_y = y_start;
+        if ((first_y & 1) != field_id) {
+            ++first_y;
+        }
+
         // Process every (2 * subsample)th line starting from field_id
-        for (int32_t y = field_id; y < height; y += (2 * static_cast<int32_t>(subsample))) {
+        for (int32_t y = first_y; y < y_end; y += (2 * static_cast<int32_t>(subsample))) {
             const double* uLine = frame.u(y);
             const double* vLine = frame.v(y);
             
-            for (int32_t x = 0; x < width; x += static_cast<int32_t>(subsample)) {
+            for (int32_t x = x_start; x < x_end; x += static_cast<int32_t>(subsample)) {
                 // U and V are already in the native decoder format (doubles)
                 // They represent the actual chroma signal levels
                 UVSample uv;
@@ -221,8 +249,8 @@ VectorscopeData VectorscopeAnalysisTool::extractFromComponentFrame(
         }
     }
     
-    ORC_LOG_DEBUG("Extracted {} native U/V samples from ComponentFrame field {} ({}x{}, subsample={}, both fields)",
-                 data.samples.size(), field_number, width, height, subsample);
+    ORC_LOG_DEBUG("Extracted {} native U/V samples from ComponentFrame field {} (active {}x{} within {}x{}, subsample={}, both fields)",
+                 data.samples.size(), field_number, data.width, data.height, width, height, subsample);
     
     return data;
 }

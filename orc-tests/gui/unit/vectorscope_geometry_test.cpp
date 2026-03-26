@@ -42,19 +42,37 @@ TEST(VectorscopeGeometryTest, plotGeometryMatchesVectorscopeRasterMapping)
     EXPECT_DOUBLE_EQ(bottom_right.y(), 1024.0);
 }
 
-TEST(VectorscopeGeometryTest, ntscTargetsUseCalibrationWhilePalDoesNot)
+TEST(VectorscopeGeometryTest, ntscAndPalTargetsShareTheSameDecodedUvSpace)
 {
     constexpr double kIreRange = 50000.0;
 
     const orc::UVSample pal_target = orc::gui::vectorscopeTargetUv(4, 1.0, kIreRange, orc::VideoSystem::PAL);
     const orc::UVSample ntsc_target = orc::gui::vectorscopeTargetUv(4, 1.0, kIreRange, orc::VideoSystem::NTSC);
 
-    const double pal_magnitude = std::hypot(pal_target.u, pal_target.v);
-    const double ntsc_magnitude = std::hypot(ntsc_target.u, ntsc_target.v);
+    EXPECT_DOUBLE_EQ(ntsc_target.u, pal_target.u);
+    EXPECT_DOUBLE_EQ(ntsc_target.v, pal_target.v);
+}
 
-    EXPECT_NEAR(ntsc_magnitude,
-                pal_magnitude * orc::gui::kNtscVectorscopeTargetCalibration,
-                1e-9);
+TEST(VectorscopeGeometryTest, ntscDisplayTargetsApplyDecoderSpaceCalibration)
+{
+    constexpr double kIreRange = 50000.0;
+
+    const orc::UVSample raw_target = orc::gui::vectorscopeTargetUv(4, 0.75, kIreRange, orc::VideoSystem::NTSC);
+    const orc::UVSample display_target = orc::gui::vectorscopeDisplayTargetUv(4, 0.75, kIreRange, orc::VideoSystem::NTSC);
+
+    EXPECT_NEAR(display_target.u, raw_target.u * orc::gui::kNtscDisplayTargetUScale, 1e-9);
+    EXPECT_NEAR(display_target.v, raw_target.v * orc::gui::kNtscDisplayTargetVScale, 1e-9);
+}
+
+TEST(VectorscopeGeometryTest, palDisplayTargetsRemainUnchanged)
+{
+    constexpr double kIreRange = 50000.0;
+
+    const orc::UVSample raw_target = orc::gui::vectorscopeTargetUv(4, 0.75, kIreRange, orc::VideoSystem::PAL);
+    const orc::UVSample display_target = orc::gui::vectorscopeDisplayTargetUv(4, 0.75, kIreRange, orc::VideoSystem::PAL);
+
+    EXPECT_DOUBLE_EQ(display_target.u, raw_target.u);
+    EXPECT_DOUBLE_EQ(display_target.v, raw_target.v);
 }
 
 TEST(VectorscopeGeometryTest, seventyFivePercentTargetScalesSampleSpaceMagnitude)

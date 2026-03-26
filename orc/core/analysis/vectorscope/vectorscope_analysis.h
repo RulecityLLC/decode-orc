@@ -12,6 +12,7 @@
 
 #include "../analysis_tool.h"
 #include "vectorscope_data.h"
+#include <orc_source_parameters.h>
 #include <memory>
 
 // Forward declaration (ComponentFrame is in global namespace, not orc::)
@@ -103,6 +104,7 @@ public:
      */
     static VectorscopeData extractFromComponentFrame(
         const ::ComponentFrame& frame,
+        const ::orc::SourceParameters& video_parameters,
         uint64_t field_number,
         uint32_t subsample = 1);
 };

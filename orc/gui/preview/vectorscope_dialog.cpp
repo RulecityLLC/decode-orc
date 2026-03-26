@@ -345,7 +345,7 @@ void VectorscopeDialog::renderVectorscope(const orc::VectorscopeData& data) {
         painter.setPen(color);
         painter.setBrush(color);
         
-        // Apply defocus if enabled
+        // Apply defocus if enabled.
         double u = sample.u;
         double v = sample.v;
         if (defocus) {
@@ -452,7 +452,7 @@ void VectorscopeDialogPrivate::drawGraticule(QPainter& painter, VectorscopeDialo
             
             // Draw targets for six colour bars (R'G'B' 001..110)
             for (int rgb = 1; rgb < 7; rgb++) {
-                const orc::UVSample target = orc::gui::vectorscopeTargetUv(rgb, percent, ireRange, system);
+                const orc::UVSample target = orc::gui::vectorscopeDisplayTargetUv(rgb, percent, ireRange, system);
                 const double barTheta = std::atan2(-target.v, target.u);
                 const double barMagnitude = std::hypot(target.u, target.v);
 

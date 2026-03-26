@@ -2066,7 +2066,7 @@ std::optional<ColourFrameCarrier> ChromaSinkStage::get_colour_preview_carrier(
     carrier.black_16b_ire = videoParams.black_16b_ire;
     carrier.white_16b_ire = videoParams.white_16b_ire;
 
-    carrier.vectorscope_data = VectorscopeAnalysisTool::extractFromComponentFrame(frame, field_a_index, 4);
+    carrier.vectorscope_data = VectorscopeAnalysisTool::extractFromComponentFrame(frame, videoParams, field_a_index, 4);
     if (carrier.vectorscope_data.has_value()) {
         carrier.vectorscope_data->system = videoParams.system;
         carrier.vectorscope_data->white_16b_ire = videoParams.white_16b_ire;

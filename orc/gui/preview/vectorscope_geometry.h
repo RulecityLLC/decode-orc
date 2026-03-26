@@ -22,7 +22,8 @@ namespace orc::gui {
 constexpr int kVectorscopeCanvasSize = 1024;
 constexpr double kVectorscopeSignedFullScale = 32768.0;
 constexpr double kVectorscopeUvRange = kVectorscopeSignedFullScale * 2.0;
-constexpr double kNtscVectorscopeTargetCalibration = 0.958;
+constexpr double kNtscDisplayTargetUScale = 1.3227191001249037;
+constexpr double kNtscDisplayTargetVScale = 0.8432371875310065;
 
 struct VectorscopePlotGeometry {
     explicit VectorscopePlotGeometry(int canvas_size_pixels = kVectorscopeCanvasSize)
@@ -62,11 +63,6 @@ struct VectorscopePlotGeometry {
     QPointF centre_point;
 };
 
-inline double vectorscopeTargetCalibration(orc::VideoSystem system)
-{
-    return system == orc::VideoSystem::NTSC ? kNtscVectorscopeTargetCalibration : 1.0;
-}
-
 inline orc::UVSample normalizedRgbToUv(double red, double green, double blue, double amplitude_scale)
 {
     const double u = (red * -0.147141) + (green * -0.288869) + (blue * 0.436010);
@@ -74,12 +70,37 @@ inline orc::UVSample normalizedRgbToUv(double red, double green, double blue, do
     return {u * amplitude_scale, v * amplitude_scale};
 }
 
+inline orc::UVSample calibrateVectorscopeDisplayUv(const orc::UVSample& sample,
+                                                   orc::VideoSystem system)
+{
+    if (system == orc::VideoSystem::NTSC) {
+        return {
+            sample.u * kNtscDisplayTargetUScale,
+            sample.v * kNtscDisplayTargetVScale
+        };
+    }
+
+    return sample;
+}
+
 inline orc::UVSample vectorscopeTargetUv(int rgb, double percent, double ire_range, orc::VideoSystem system)
 {
+    (void)system;
     const double red = percent * static_cast<double>((rgb >> 2) & 1);
     const double green = percent * static_cast<double>((rgb >> 1) & 1);
     const double blue = percent * static_cast<double>(rgb & 1);
-    return normalizedRgbToUv(red, green, blue, ire_range * vectorscopeTargetCalibration(system));
+    return normalizedRgbToUv(red, green, blue, ire_range);
+}
+
+inline orc::UVSample vectorscopeDisplayTargetUv(int rgb,
+                                                double percent,
+                                                double ire_range,
+                                                orc::VideoSystem system)
+{
+    return calibrateVectorscopeDisplayUv(
+        vectorscopeTargetUv(rgb, percent, ire_range, system),
+        system
+    );
 }
 
 } // namespace orc::gui
