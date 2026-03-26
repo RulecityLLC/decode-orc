@@ -89,7 +89,9 @@ namespace orc {
 
 // Helper functions to convert between common types and presenter types
 namespace {
-    constexpr const char* kVectorscopeViewId = "preview.vectorscope";
+
+    constexpr const char* kLineScopeViewId = "preview.linescope";
+    constexpr const char* kFieldTimingViewId = "preview.field_timing";
 
     orc::presenters::VideoFormat toPresenterVideoFormat(orc::VideoSystem system) {
         switch (system) {
@@ -2415,7 +2417,8 @@ void MainWindow::refreshVectorscopeForCurrentCoordinate()
         return;
     }
 
-    if (!preview_dialog_->hasAvailablePreviewView(kVectorscopeViewId)) {
+    const std::string active_vectorscope_view_id = preview_dialog_->activeVectorscopeViewId();
+    if (!preview_dialog_->hasAvailablePreviewView(active_vectorscope_view_id)) {
         preview_dialog_->updateVectorscope(current_view_node_id_, std::nullopt);
         return;
     }
@@ -2434,6 +2437,10 @@ void MainWindow::refreshVectorscopeForCurrentCoordinate()
         ? *preview_dialog_->sharedPreviewCoordinate()
         : buildCurrentPreviewCoordinate();
 
+    // Vectorscope must follow the currently displayed preview item.
+    // Shared coordinates may come from line-scope clicks (absolute field indices),
+    // which would otherwise desynchronize frame-based vectorscope requests.
+    coordinate.field_index = static_cast<uint64_t>(preview_dialog_->currentIndex());
     coordinate.data_type_context = inferCurrentVideoDataType();
     if (!coordinate.is_valid()) {
         return;
@@ -2441,7 +2448,7 @@ void MainWindow::refreshVectorscopeForCurrentCoordinate()
 
     const auto result = render_coordinator_->requestPreviewViewData(
         current_view_node_id_,
-        kVectorscopeViewId,
+        active_vectorscope_view_id,
         coordinate.data_type_context,
         coordinate);
 
@@ -3870,6 +3877,11 @@ void MainWindow::onFieldTimingRequested()
         ORC_LOG_WARN("No node selected for field timing view");
         return;
     }
+
+    if (!preview_dialog_ || !preview_dialog_->hasAvailablePreviewView(kFieldTimingViewId)) {
+        ORC_LOG_DEBUG("Field timing view is not available for the selected stage");
+        return;
+    }
     
     // Request field timing data for current preview frame/field
     int current_index = preview_dialog_->previewSlider()->value();
@@ -4430,6 +4442,11 @@ void MainWindow::onLineScopeRequested(int image_x, int image_y)
     
     if (!current_view_node_id_.is_valid()) {
         ORC_LOG_WARN("No node selected for line scope");
+        return;
+    }
+
+    if (!preview_dialog_ || !preview_dialog_->hasAvailablePreviewView(kLineScopeViewId)) {
+        ORC_LOG_DEBUG("Line scope view is not available for the selected stage");
         return;
     }
     

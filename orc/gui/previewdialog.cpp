@@ -33,7 +33,9 @@
 
 namespace {
 
-constexpr const char* kVectorscopeViewId = "preview.vectorscope";
+constexpr const char* kLineScopeViewId = "preview.linescope";
+constexpr const char* kFieldTimingViewId = "preview.field_timing";
+constexpr const char* kComponentVectorscopeViewId = "preview.vectorscope";
 
 orc::ParameterValue resolveTweakParameterValue(
     const orc::ParameterDescriptor& desc,
@@ -111,6 +113,12 @@ void PreviewDialog::setSignalControlsVisible(bool visible)
 
 PreviewDialog::~PreviewDialog() = default;
 
+const std::string& PreviewDialog::kComponentVectorscopeViewIdRef()
+{
+    static const std::string view_id{kComponentVectorscopeViewId};
+    return view_id;
+}
+
 void PreviewDialog::navigateToIndex(int zero_based)
 {
     const int clamped = std::clamp(zero_based,
@@ -175,13 +183,20 @@ void PreviewDialog::setupUI()
     auto* viewMenu = menu_bar_->addMenu("&View");
     show_field_timing_action_ = viewMenu->addAction("&Field Timing");
     show_field_timing_action_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_T));
-    connect(show_field_timing_action_, &QAction::triggered, this, &PreviewDialog::fieldTimingRequested);
+    connect(show_field_timing_action_, &QAction::triggered, this, [this]() {
+        if (!hasAvailablePreviewView(kFieldTimingViewId)) {
+            status_bar_->showMessage("Field timing is not available for this stage", 2000);
+            return;
+        }
+        emit fieldTimingRequested();
+    });
 
-    show_vectorscope_action_ = viewMenu->addAction("&Component Vectorscope");
-    show_vectorscope_action_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S));
-    show_vectorscope_action_->setVisible(false);
-    show_vectorscope_action_->setEnabled(false);
-    connect(show_vectorscope_action_, &QAction::triggered, this, &PreviewDialog::onVectorscopeActionTriggered);
+        show_component_vectorscope_action_ = viewMenu->addAction("&Component Vectorscope");
+        show_component_vectorscope_action_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S));
+        show_component_vectorscope_action_->setVisible(false);
+        show_component_vectorscope_action_->setEnabled(false);
+        connect(show_component_vectorscope_action_, &QAction::triggered,
+            this, &PreviewDialog::onComponentVectorscopeActionTriggered);
 
     show_live_tweaks_action_ = viewMenu->addAction("&Live Tweaks");
     show_live_tweaks_action_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L));
@@ -455,6 +470,10 @@ void PreviewDialog::setupUI()
     
     // Connect line clicked signal
     connect(preview_widget_, &FieldPreviewWidget::lineClicked, [this](int image_x, int image_y) {
+        if (!hasAvailablePreviewView(kLineScopeViewId)) {
+            status_bar_->showMessage("Line scope is not available for this stage", 2000);
+            return;
+        }
         emit lineScopeRequested(image_x, image_y);
     });
 }
@@ -487,14 +506,29 @@ void PreviewDialog::setAvailablePreviewViews(const std::vector<orc::PreviewViewD
         available_preview_view_ids_.insert(view.id);
     }
 
-    const bool vectorscope_available = hasAvailablePreviewView(kVectorscopeViewId);
+    const bool line_scope_available = hasAvailablePreviewView(kLineScopeViewId);
+    const bool field_timing_available = hasAvailablePreviewView(kFieldTimingViewId);
+    const bool component_vectorscope_available = hasAvailablePreviewView(kComponentVectorscopeViewId);
 
-    if (show_vectorscope_action_) {
-        show_vectorscope_action_->setVisible(vectorscope_available);
-        show_vectorscope_action_->setEnabled(vectorscope_available);
+    if (show_field_timing_action_) {
+        show_field_timing_action_->setVisible(field_timing_available);
+        show_field_timing_action_->setEnabled(field_timing_available);
     }
 
-    if (!vectorscope_available) {
+    if (!line_scope_available && line_scope_dialog_ && line_scope_dialog_->isVisible()) {
+        line_scope_dialog_->close();
+    }
+
+    if (!field_timing_available && field_timing_dialog_ && field_timing_dialog_->isVisible()) {
+        field_timing_dialog_->close();
+    }
+
+    if (show_component_vectorscope_action_) {
+        show_component_vectorscope_action_->setVisible(component_vectorscope_available);
+        show_component_vectorscope_action_->setEnabled(component_vectorscope_available);
+    }
+
+    if (!component_vectorscope_available) {
         closeVectorscopeDialogs();
     }
 }
@@ -548,6 +582,8 @@ void PreviewDialog::showVectorscopeForNode(orc::NodeID node_id)
             vectorscope_node_id_ = orc::NodeID{};
         });
     }
+
+    vectorscope_dialog_->setScopeLabel(QStringLiteral("Component Vectorscope"));
 
     vectorscope_node_id_ = node_id;
     vectorscope_dialog_->setStage(node_id);
@@ -1038,9 +1074,9 @@ void PreviewDialog::notifyFrameChanged()
     emit previewFrameChanged();
 }
 
-void PreviewDialog::onVectorscopeActionTriggered()
+void PreviewDialog::onComponentVectorscopeActionTriggered()
 {
-    if (!hasAvailablePreviewView(kVectorscopeViewId) || !current_node_id_.is_valid()) {
+    if (!hasAvailablePreviewView(kComponentVectorscopeViewId) || !current_node_id_.is_valid()) {
         return;
     }
 

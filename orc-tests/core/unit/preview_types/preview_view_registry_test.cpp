@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <unordered_set>
 
 #include "../../../orc/core/include/preview_view_registry.h"
 #include "../../../orc/core/include/colour_preview_provider.h"
@@ -708,6 +709,28 @@ TEST(PreviewViewRegistryTest, applicableViews_emptyWhenStageHasNoCapabilityInter
         dag, orc::NodeID(1), orc::VideoDataType::CompositeNTSC);
 
     EXPECT_TRUE(views.empty());
+}
+
+TEST(PreviewViewRegistryTest, defaultViews_includeGenericVfrVisualizations)
+{
+    orc::PreviewViewRegistry registry;
+
+    auto stage = std::make_shared<TestPreviewStage>(
+        std::vector<orc::VideoDataType>{orc::VideoDataType::CompositeNTSC});
+    auto dag = std::make_shared<orc::DAG>(build_test_dag_with_stage(stage));
+
+    orc::PreviewViewRegistry::register_default_views(registry, dag, nullptr);
+
+    const auto views = registry.get_applicable_views(
+        *dag, orc::NodeID(1), orc::VideoDataType::CompositeNTSC);
+
+    std::unordered_set<std::string> ids;
+    for (const auto& view : views) {
+        ids.insert(view.id);
+    }
+
+    EXPECT_TRUE(ids.find("preview.linescope") != ids.end());
+    EXPECT_TRUE(ids.find("preview.field_timing") != ids.end());
 }
 
 // =============================================================================

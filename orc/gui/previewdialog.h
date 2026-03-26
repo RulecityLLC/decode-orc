@@ -108,6 +108,13 @@ public:
     bool hasAvailablePreviewView(const std::string& view_id) const;
 
     /**
+     * @brief Return the currently selected vectorscope preview view id.
+     */
+    const std::string& activeVectorscopeViewId() const { return kComponentVectorscopeViewIdRef(); }
+
+    static const std::string& kComponentVectorscopeViewIdRef();
+
+    /**
      * @brief Set and broadcast the shared preview coordinate for supplementary tools.
      */
     void setSharedPreviewCoordinate(const orc::PreviewCoordinate& coordinate);
@@ -298,7 +305,7 @@ Q_SIGNALS:
 
 private slots:
     void onSampleMarkerMoved(int sample_x);
-    void onVectorscopeActionTriggered();
+    void onComponentVectorscopeActionTriggered();
     void onShowLiveTweaksToggled(bool checked);
     void onResetLiveTweaksClicked();
     void onWriteLiveTweaksClicked();
@@ -324,7 +331,7 @@ private:
     QAction* show_quality_metrics_action_;
     QAction* show_ntsc_observer_action_;
     QAction* show_field_timing_action_;
-    QAction* show_vectorscope_action_;
+    QAction* show_component_vectorscope_action_;
     QAction* show_live_tweaks_action_;
     LineScopeDialog* line_scope_dialog_;
     FieldTimingDialog* field_timing_dialog_;

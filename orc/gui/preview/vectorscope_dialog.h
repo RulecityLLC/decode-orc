@@ -62,6 +62,7 @@ public:
     explicit VectorscopeDialog(QWidget *parent = nullptr);
     ~VectorscopeDialog() override;
     
+    void setScopeLabel(const QString& scope_label);
     void setStage(orc::NodeID node_id);
     bool isActiveAreaOnly() const;
     
@@ -104,6 +105,7 @@ private:
     void setupUI();
     void connectSignals();
     int getGraticuleMode() const;
+    void updateWindowTitle();
     
     // Pimpl - hides core types from header
     std::unique_ptr<VectorscopeDialogPrivate> d_;

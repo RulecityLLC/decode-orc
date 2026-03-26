@@ -180,7 +180,7 @@ public:
      * @param node_id The node to get representation from
      * @return Shared pointer to the field representation, or nullptr if not available
      */
-    std::shared_ptr<const VideoFieldRepresentation> get_representation_at_node(const NodeID& node_id);
+    std::shared_ptr<const VideoFieldRepresentation> get_representation_at_node(const NodeID& node_id) const;
     
     /**
      * @brief Convert an index from one output type to equivalent index in another type

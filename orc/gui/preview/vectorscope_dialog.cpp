@@ -18,6 +18,7 @@
 class VectorscopeDialogPrivate {
 public:
     orc::NodeID node_id;
+    QString scope_label{"Component Vectorscope"};
     uint64_t current_field_number = 0;
     std::optional<orc::VectorscopeData> last_data;
     
@@ -97,7 +98,7 @@ VectorscopeDialog::VectorscopeDialog(QWidget *parent)
     : QDialog(parent)
     , d_(std::make_unique<VectorscopeDialogPrivate>())
 {
-    setWindowTitle("Component Vectorscope");
+    updateWindowTitle();
     setWindowFlags(Qt::Window);
     resize(800, 900);
     
@@ -111,9 +112,24 @@ int VectorscopeDialog::getGraticuleMode() const {
     return graticule_group_->checkedId();
 }
 
+void VectorscopeDialog::setScopeLabel(const QString& scope_label)
+{
+    d_->scope_label = scope_label;
+    updateWindowTitle();
+}
+
+void VectorscopeDialog::updateWindowTitle()
+{
+    if (d_->node_id.is_valid()) {
+        setWindowTitle(QString("%1 - Node %2").arg(d_->scope_label).arg(d_->node_id.value()));
+        return;
+    }
+    setWindowTitle(d_->scope_label);
+}
+
 void VectorscopeDialog::setStage(orc::NodeID node_id) {
     d_->node_id = node_id;
-    setWindowTitle(QString("Component Vectorscope - Node %1").arg(node_id.value()));
+    updateWindowTitle();
 }
 
 void VectorscopeDialog::setupUI() {
