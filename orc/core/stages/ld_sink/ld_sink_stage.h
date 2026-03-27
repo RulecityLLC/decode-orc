@@ -14,11 +14,11 @@
 #include "stage_parameter.h"
 #include <node_type.h>
 #include "video_field_representation.h"
-#include <tbc_metadata.h>
 #include "../triggerable_stage.h"
 #include "previewable_stage.h"
 #include "observation_context.h"
 #include "observation_schema.h"
+#include "../../factories_interface.h"
 #include <string>
 #include <memory>
 #include <functional>
@@ -43,7 +43,7 @@ namespace orc {
  */
 class LDSinkStage : public DAGStage, public ParameterizedStage, public TriggerableStage, public PreviewableStage {
 public:
-    LDSinkStage();
+    LDSinkStage(std::shared_ptr<IFactories> factories) : factories_(std::move(factories)) {}
     ~LDSinkStage() override = default;
     
     // DAGStage interface
@@ -104,13 +104,7 @@ private:
     TriggerProgressCallback progress_callback_;  // Progress callback for trigger operations
     std::atomic<bool> is_processing_{false};
     std::atomic<bool> cancel_requested_{false};
-    
-    // Helper methods
-    bool write_tbc_and_metadata(
-        const VideoFieldRepresentation* representation,
-        const std::string& tbc_path,
-        IObservationContext& observation_context
-    );
+    std::shared_ptr<IFactories> factories_;
 };
 
 } // namespace orc

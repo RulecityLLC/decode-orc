@@ -77,7 +77,7 @@ namespace orc_unit_test
             {"daphne_vbi_sink", PublicStageFamily::Sink, true, [] { return std::make_shared<orc::DaphneVBISinkStage>(orc::Factories::instance()); }},
             {"audio_sink", PublicStageFamily::Sink, true, [] { return std::make_shared<orc::AudioSinkStage>(); }},
             {"cc_sink", PublicStageFamily::Sink, true, [] { return std::make_shared<orc::CCSinkStage>(); }},
-            {"ld_sink", PublicStageFamily::Sink, true, [] { return std::make_shared<orc::LDSinkStage>(); }},
+            {"ld_sink", PublicStageFamily::Sink, true, [] { return std::make_shared<orc::LDSinkStage>(orc::Factories::instance()); }},
             {"efm_sink", PublicStageFamily::Sink, true, [] { return std::make_shared<orc::EFMSinkStage>(); }},
             {"raw_efm_sink", PublicStageFamily::Sink, true, [] { return std::make_shared<orc::RawEFMSinkStage>(); }},
             {"hackdac_sink", PublicStageFamily::Sink, true, [] { return std::make_shared<orc::HackdacSinkStage>(); }},
